@@ -1,0 +1,171 @@
+"""
+seed_data.py
+
+Idempotent script to ensure roles include Admin/Manager/Staff/User and to create
+dummy users and menu items requested by the user.
+
+Run: python flask/seed_data.py
+"""
+import os
+import sqlite3
+from datetime import datetime
+import random
+
+ROOT = os.path.dirname(__file__)
+DB = os.environ.get('DB_PATH', os.path.join(ROOT, 'data', 'app.db'))
+
+def ensure_title_column(conn):
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(users)")
+    cols = [r[1] for r in cur.fetchall()]
+    if 'title' not in cols:
+        print('Adding title column to users')
+        cur.execute('ALTER TABLE users ADD COLUMN title TEXT')
+        conn.commit()
+    else:
+        print('title column already present')
+
+def ensure_roles(conn):
+    cur = conn.cursor()
+    roles = ['Admin','Manager','Staff','User']
+    for r in roles:
+        cur.execute('INSERT OR IGNORE INTO roles (name) VALUES (?)', (r,))
+    conn.commit()
+
+def seed_users(conn):
+    cur = conn.cursor()
+    # Determine role ids
+    cur.execute("SELECT id, name FROM roles")
+    role_map = {name: id for id, name in cur.fetchall()}
+
+    users = []
+    # 1 admin
+    users.append({'first_name':'Alice','last_name':'Admin','email':'alice.admin@example.com','phone_number':'+10000000001','role':'Admin','title':'System Administrator'})
+    # 1 manager
+    users.append({'first_name':'Maya','last_name':'Manager','email':'maya.manager@example.com','phone_number':'+10000000002','role':'Manager','title':'Operations Manager'})
+    # 3 staff
+    users += [
+        {'first_name':'Sam','last_name':'Staff','email':'sam.staff@example.com','phone_number':'+10000000003','role':'Staff','title':'Floor Staff'},
+        {'first_name':'Tina','last_name':'Staff','email':'tina.staff@example.com','phone_number':'+10000000004','role':'Staff','title':'Kitchen Staff'},
+        {'first_name':'Raj','last_name':'Staff','email':'raj.staff@example.com','phone_number':'+10000000005','role':'Staff','title':'Service Staff'},
+    ]
+    # 5 users
+    for i in range(1,6):
+        users.append({'first_name':f'User{i}','last_name':'Customer', 'email':f'user{i}@example.com','phone_number':f'+1000000001{i}','role':'User','title':None})
+
+    # Insert users if email not present
+    for u in users:
+        cur.execute('SELECT id FROM users WHERE email=?', (u['email'],))
+        if cur.fetchone():
+            print('User exists, skipping:', u['email'])
+            continue
+        role_id = role_map.get(u['role'])
+        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date) VALUES (?,?,?,?,?,?,?)', (
+            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow()
+        ))
+        print('Inserted user:', u['email'])
+    conn.commit()
+
+def seed_menu_items(conn):
+    cur = conn.cursor()
+    # Get type ids
+    cur.execute('SELECT id, name FROM types')
+    types = [r[0] for r in cur.fetchall()]
+    sample_items = [
+        ('Spring Rolls', 5.5, 'Crispy spring rolls', None, 10),
+        ('Beef Burger', 9.5, 'Grilled beef burger', None, 8),
+        ('Cheesecake', 6.0, 'Creamy cheesecake', None, 6),
+        ('Lemonade', 3.0, 'Fresh lemonade', None, 20),
+        ('Caesar Salad', 7.0, 'Fresh greens', None, 12),
+        ('Grilled Salmon', 14.5, 'Served with veggies', None, 5),
+        ('Chocolate Mousse', 5.5, 'Rich chocolate mousse', None, 7),
+        ('Iced Tea', 2.5, 'Brewed iced tea', None, 15),
+        ('Spaghetti', 10.0, 'Pasta with tomato sauce', None, 9),
+        ('Garlic Bread', 3.5, 'Toasted garlic bread', None, 11)
+    ]
+
+    # Insert only if name not present
+    for name, price, desc, img, qty in sample_items:
+        cur.execute('SELECT id FROM menu_items WHERE name=?', (name,))
+        if cur.fetchone():
+            print('Menu item exists, skipping:', name)
+            continue
+        type_id = random.choice(types) if types else None
+        cur.execute('INSERT INTO menu_items (name,price,description,img_link,qty_left,type_id,discount) VALUES (?,?,?,?,?,?,?)', (
+            name, price, desc, img, qty, type_id, 0
+        ))
+        print('Inserted menu item:', name)
+    conn.commit()
+
+
+def seed_orders(conn):
+    cur = conn.cursor()
+    # Get user ids for customers (role 'User')
+    cur.execute("SELECT id FROM roles WHERE name='User'")
+    row = cur.fetchone()
+    user_role_id = row[0] if row else None
+    cur.execute('SELECT id FROM users WHERE role_id=?', (user_role_id,))
+    user_ids = [r[0] for r in cur.fetchall()]
+
+    # Get all menu item ids
+    cur.execute('SELECT id FROM menu_items')
+    item_ids = [r[0] for r in cur.fetchall()]
+    if not user_ids or not item_ids:
+        print('No users or menu items to create orders')
+        return
+
+    import random
+    from datetime import datetime, timedelta
+    import json
+
+    # Create one order per user (or up to 5), but only if that user has no orders yet
+    orders_to_create = user_ids[:5]
+    extra = 2
+    for uid in orders_to_create:
+        # skip if user already has an order
+        cur.execute('SELECT id FROM orders WHERE member_id=? LIMIT 1', (uid,))
+        if cur.fetchone():
+            print(f'User {uid} already has order, skipping')
+            continue
+        ts = datetime.utcnow() - timedelta(days=random.randint(0,7), hours=random.randint(0,23))
+        cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, ts))
+        order_id = cur.lastrowid
+        # add 1-3 items per order and store as JSON array in order_items table
+        items = []
+        for _ in range(random.randint(1,3)):
+            item = random.choice(item_ids)
+            qty = random.randint(1,3)
+            items.append({'item_id': item, 'qty': qty})
+        cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+
+    # extra orders by random users
+    for _ in range(extra):
+        uid = random.choice(user_ids)
+        ts = datetime.utcnow() - timedelta(days=random.randint(0,7), hours=random.randint(0,23))
+        cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, ts))
+        order_id = cur.lastrowid
+        items = []
+        for _ in range(random.randint(1,3)):
+            item = random.choice(item_ids)
+            qty = random.randint(1,4)
+            items.append({'item_id': item, 'qty': qty})
+        cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+
+    conn.commit()
+    print('Seeded orders and order_items')
+
+def main():
+    if not os.path.exists(DB):
+        print('DB not found, run init_db.py first')
+        return
+    conn = sqlite3.connect(DB)
+    ensure_title_column(conn)
+    ensure_roles(conn)
+    seed_users(conn)
+    seed_menu_items(conn)
+    seed_orders(conn)
+    conn.close()
+    print('Seeding complete')
+
+if __name__ == '__main__':
+    main()

@@ -3,13 +3,13 @@ networks:
     driver: bridge
   internal_net:
     driver: bridge
+    internal: true
 
 services:
   proxyserver:
     build: ./proxy
     ports:
       - "8080:8080"
-      - "5000:5000"
     networks:
       - public_net
       - internal_net

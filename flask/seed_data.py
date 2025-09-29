@@ -10,6 +10,7 @@ import os
 import sqlite3
 from datetime import datetime
 import random
+from typing import Optional, List, Dict
 
 ROOT = os.path.dirname(__file__)
 DB = os.environ.get('DB_PATH', os.path.join(ROOT, 'data', 'app.db'))
@@ -25,6 +26,34 @@ def ensure_title_column(conn):
     else:
         print('title column already present')
 
+
+def ensure_password_hash_column(conn):
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(users)")
+    cols = [r[1] for r in cur.fetchall()]
+    if 'password_hash' not in cols:
+        print('Adding password_hash column to users')
+        cur.execute('ALTER TABLE users ADD COLUMN password_hash TEXT')
+        conn.commit()
+    else:
+        print('password_hash column already present')
+
+
+def update_missing_passwords(conn, default_password='password'):
+    # Set a default password hash for users missing password_hash (idempotent)
+    from utils import hash_password
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE password_hash IS NULL OR password_hash = ''")
+    rows = [r[0] for r in cur.fetchall()]
+    if not rows:
+        print('No users need password updates')
+        return
+    pw_hash = hash_password(default_password)
+    for uid in rows:
+        cur.execute('UPDATE users SET password_hash=? WHERE id=?', (pw_hash, uid))
+        print('Updated password for user id', uid)
+    conn.commit()
+
 def ensure_roles(conn):
     cur = conn.cursor()
     roles = ['Admin','Manager','Staff','User']
@@ -38,30 +67,31 @@ def seed_users(conn):
     cur.execute("SELECT id, name FROM roles")
     role_map = {name: id for id, name in cur.fetchall()}
 
-    users = []
+    users: List[Dict[str, Optional[str]]] = []
     # 1 admin
     users.append({'first_name':'Alice','last_name':'Admin','email':'alice.admin@example.com','phone_number':'+10000000001','role':'Admin','title':'System Administrator'})
     # 1 manager
     users.append({'first_name':'Maya','last_name':'Manager','email':'maya.manager@example.com','phone_number':'+10000000002','role':'Manager','title':'Operations Manager'})
     # 3 staff
-    users += [
-        {'first_name':'Sam','last_name':'Staff','email':'sam.staff@example.com','phone_number':'+10000000003','role':'Staff','title':'Floor Staff'},
-        {'first_name':'Tina','last_name':'Staff','email':'tina.staff@example.com','phone_number':'+10000000004','role':'Staff','title':'Kitchen Staff'},
-        {'first_name':'Raj','last_name':'Staff','email':'raj.staff@example.com','phone_number':'+10000000005','role':'Staff','title':'Service Staff'},
-    ]
+    users.append({'first_name':'Sam','last_name':'Staff','email':'sam.staff@example.com','phone_number':'+10000000003','role':'Staff','title':'Floor Staff'})
+    users.append({'first_name':'Tina','last_name':'Staff','email':'tina.staff@example.com','phone_number':'+10000000004','role':'Staff','title':'Kitchen Staff'})
+    users.append({'first_name':'Raj','last_name':'Staff','email':'raj.staff@example.com','phone_number':'+10000000005','role':'Staff','title':'Service Staff'})
     # 5 users
     for i in range(1,6):
         users.append({'first_name':f'User{i}','last_name':'Customer', 'email':f'user{i}@example.com','phone_number':f'+1000000001{i}','role':'User','title':None})
 
     # Insert users if email not present
+    # Prefer secure password for seeded users (password: 'password')
+    from utils import hash_password
     for u in users:
         cur.execute('SELECT id FROM users WHERE email=?', (u['email'],))
         if cur.fetchone():
             print('User exists, skipping:', u['email'])
             continue
         role_id = role_map.get(u['role'])
-        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date) VALUES (?,?,?,?,?,?,?)', (
-            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow()
+        pw_hash = hash_password('password')
+        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date,password_hash) VALUES (?,?,?,?,?,?,?,?)', (
+            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow(), pw_hash
         ))
         print('Inserted user:', u['email'])
     conn.commit()
@@ -160,7 +190,9 @@ def main():
         return
     conn = sqlite3.connect(DB)
     ensure_title_column(conn)
+    ensure_password_hash_column(conn)
     ensure_roles(conn)
+    update_missing_passwords(conn)
     seed_users(conn)
     seed_menu_items(conn)
     seed_orders(conn)

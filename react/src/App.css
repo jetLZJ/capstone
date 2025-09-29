@@ -1,0 +1,33 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.card {
+  padding: 2em;
+  margin: 2em 0;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+}
+
+.message {
+  color: #4caf50;
+}
+
+.error {
+  color: #f44336;
+}
+
+.footer {
+  margin-top: 3rem;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+@media (prefers-color-scheme: light) {
+  .card {
+    background-color: #f1f1f1;
+  }
+}

@@ -1,0 +1,41 @@
+networks:
+  public_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+
+services:
+  proxyserver:
+    build: ./proxy
+    ports:
+      - "8080:8080"
+      - "5000:5000"
+    networks:
+      - public_net
+      - internal_net
+    depends_on:
+      - flaskserver
+      - frontendserver
+  flaskserver:
+    build: ./flask
+    expose:
+      - "5000"
+    working_dir: /app
+    environment:
+      DB_PATH: /app/data/app.db
+    command: python app.py
+    networks:
+      - internal_net
+    volumes:
+      - ./flask/data:/app/data
+  frontendserver:
+    build: ./react
+    ports:
+      - "3000:3000"
+    networks:
+      - public_net
+    volumes:
+      - ./react:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development

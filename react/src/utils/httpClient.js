@@ -3,7 +3,10 @@ import AuthService from '../services/AuthService';
 
 // Create axios instance with default config
 const httpClient = axios.create({
-  baseURL: '/api',
+  // Leave baseURL empty so callers can include '/api' explicitly.
+  // Some components already include '/api' in URLs; keeping baseURL empty
+  // avoids double '/api/api' paths.
+  baseURL: '',
   headers: {
     'Content-Type': 'application/json',
   },

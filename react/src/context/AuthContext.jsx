@@ -1,5 +1,6 @@
 import { createContext, useReducer, useEffect, useCallback } from 'react';
 import AuthService from '../services/AuthService';
+import httpClient from '../utils/httpClient';
 import * as jwtDecodeModule from 'jwt-decode';
 // Some distributions of `jwt-decode` don't provide a default export when bundled
 // (Vite/Rollup can expose only named exports). Use a safe fallback so both ESM
@@ -191,10 +192,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // authFetch: wrapper around http client so components can use a consistent API
+  const authFetch = useCallback(async (url, options = {}) => {
+    // httpClient follows axios signature: (url, config)
+    return httpClient(url, options);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
         ...state,
+        authFetch,
         login,
         register,
         logout,

@@ -8,8 +8,8 @@ networks:
 services:
   proxyserver:
     build: ./proxy
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     networks:
       - public_net
       - internal_net

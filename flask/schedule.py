@@ -3,20 +3,12 @@ from utils import get_db
 from schemas import ShiftSchema, AssignmentSchema
 from marshmallow import ValidationError
 from typing import Any, Dict
+try:
+    from .permissions import require_roles
+except Exception:
+    from permissions import require_roles
 
 bp = Blueprint('schedule', __name__)
-
-
-def is_manager_by_id(uid):
-    try:
-        uid = int(uid)
-    except Exception:
-        return False
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('SELECT r.name FROM users u JOIN roles r ON u.role_id=r.id WHERE u.id=?', (uid,))
-    row = cur.fetchone()
-    return bool(row and row[0] == 'Manager')
 
 
 @bp.route('/shifts', methods=['POST'])
@@ -27,11 +19,10 @@ def create_shift():
     except Exception:
         return jsonify({'msg': 'JWT not available'}), 501
 
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
+        from flask_jwt_extended import get_jwt_identity
         uid = get_jwt_identity()
-        if not is_manager_by_id(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         data = request.get_json() or {}
         try:
             # Marshmallow may return dict or other mapping-like types; cast to a plain dict for type checker
@@ -66,11 +57,10 @@ def assign_shift():
     except Exception:
         return jsonify({'msg': 'JWT not available'}), 501
 
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
+        from flask_jwt_extended import get_jwt_identity
         uid = get_jwt_identity()
-        if not is_manager_by_id(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         data = request.get_json() or {}
         try:
             from typing import cast

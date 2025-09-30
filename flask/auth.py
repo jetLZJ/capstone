@@ -159,11 +159,11 @@ def me():
         uid = get_jwt_identity()
         conn = get_db()
         cur = conn.cursor()
-        cur.execute('SELECT id, first_name, last_name, email FROM users WHERE id=?', (uid,))
+        cur.execute('SELECT u.id, u.first_name, u.last_name, u.email, r.name FROM users u JOIN roles r ON u.role_id=r.id WHERE u.id=?', (uid,))
         row = cur.fetchone()
         if not row:
             return jsonify({'msg': 'User not found'}), 404
-        return jsonify({'id': row[0], 'first_name': row[1], 'last_name': row[2], 'email': row[3]})
+        return jsonify({'id': row[0], 'first_name': row[1], 'last_name': row[2], 'email': row[3], 'role': row[4]})
     return inner()
 
 

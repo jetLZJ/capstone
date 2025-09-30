@@ -47,7 +47,14 @@ def close_db() -> None:
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt when available, otherwise PBKDF2-HMAC-SHA256."""
     if bcrypt:
-        return bcrypt.hash(password)
+        try:
+            # passlib's bcrypt may be present but its native backend can fail at runtime
+            # (for example a broken "bcrypt" C-extension). Attempt to use it and
+            # fall back to the pbkdf2 path on any error.
+            return bcrypt.hash(password)
+        except Exception:
+            # fall through to the pbkdf2 fallback below
+            pass
     # fallback to pbkdf2
     salt = _os.urandom(16)
     dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
@@ -57,7 +64,12 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against a stored hash."""
     if bcrypt:
-        return bcrypt.verify(password, hashed)
+        try:
+            return bcrypt.verify(password, hashed)
+        except Exception:
+            # If bcrypt verification fails (e.g. stored hash isn't a bcrypt string or
+            # the backend is broken), fall back to the pbkdf2 verification below.
+            pass
     import binascii
     raw = binascii.unhexlify(hashed.encode('ascii'))
     salt = raw[:16]

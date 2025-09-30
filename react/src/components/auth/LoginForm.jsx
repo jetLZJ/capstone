@@ -39,7 +39,7 @@ const LoginForm = ({ onSuccess }) => {
     <div className="w-full max-w-md">
       <form onSubmit={formik.handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="email" className="block text-sm font-medium text-[var(--app-text)]">
             Email
           </label>
           <input
@@ -60,7 +60,7 @@ const LoginForm = ({ onSuccess }) => {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="password" className="block text-sm font-medium text-[var(--app-text)]">
             Password
           </label>
           <input

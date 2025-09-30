@@ -12,6 +12,15 @@ export default {
   theme: {
     extend: {
       colors: {
+        // App-specific palette (defaults from the Figma make approximated)
+        app: {
+          primary: '#060614', // near-black primary used for CTA
+          'primary-contrast': '#ffffff',
+          bg: '#f9fafb',
+          surface: '#ffffff',
+          muted: '#6b7280',
+          accent: '#f97316'
+        },
         primary: {
           50: '#f0fdf4',
           100: '#dcfce7',

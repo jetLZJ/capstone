@@ -10,13 +10,13 @@ const AuthContainer = ({ onSuccess }) => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 py-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      <div className="flex mb-6 border-b dark:border-gray-700">
+    <div className="w-full max-w-md mx-auto px-4 py-8 bg-[var(--app-surface)] rounded-lg shadow-md">
+      <div className="flex mb-6 border-b">
         <button
           className={`flex-1 py-3 font-medium text-center ${
             activeTab === 'login'
-              ? 'text-primary-600 border-b-2 border-primary-600'
-              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+              ? 'text-[var(--app-accent)] border-b-2 border-[var(--app-accent)]'
+              : 'text-[var(--app-muted)] hover:text-[var(--app-text)]'
           }`}
           onClick={() => handleTabChange('login')}
         >
@@ -25,8 +25,8 @@ const AuthContainer = ({ onSuccess }) => {
         <button
           className={`flex-1 py-3 font-medium text-center ${
             activeTab === 'register'
-              ? 'text-primary-600 border-b-2 border-primary-600'
-              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+              ? 'text-[var(--app-accent)] border-b-2 border-[var(--app-accent)]'
+              : 'text-[var(--app-muted)] hover:text-[var(--app-text)]'
           }`}
           onClick={() => handleTabChange('register')}
         >

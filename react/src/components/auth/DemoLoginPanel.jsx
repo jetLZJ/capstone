@@ -4,10 +4,10 @@ const DemoLoginPanel = ({ demoUsers = [], onQuickLogin = () => {} }) => {
   return (
     <div className="space-y-3">
       {demoUsers.map((u) => (
-        <div key={u.email} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded">
+        <div key={u.email} className="flex items-center justify-between bg-[var(--app-surface)] p-3 rounded">
           <div>
             <div className="text-sm font-semibold">{u.role}</div>
-            <div className="text-xs text-gray-500">{u.email}</div>
+            <div className="text-xs text-[var(--app-muted)]">{u.email}</div>
           </div>
           <div>
             <button

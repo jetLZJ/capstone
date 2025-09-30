@@ -42,16 +42,16 @@ const LoginPage = () => {
   return (
     <div className="flex items-center justify-center min-h-[80vh] px-4">
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        <div className="px-6 py-8 bg-gradient-to-br from-white/60 to-primary-50/20 rounded-lg shadow-md">
-          <h1 className="text-4xl font-extrabold mb-3 text-primary-600">Welcome to Restaurant Manager</h1>
-          <p className="text-gray-700 dark:text-gray-300 mb-6">Manage your menu, shifts, and analytics in one place. Use the demo credentials below to quickly test different roles.</p>
+        <div className="px-6 py-8 bg-[var(--app-surface)] rounded-lg shadow-md">
+          <h1 className="text-4xl font-extrabold mb-3 text-[var(--app-primary)]">Welcome to Restaurant Manager</h1>
+          <p className="text-[var(--app-muted)] mb-6">Manage your menu, shifts, and analytics in one place. Use the demo credentials below to quickly test different roles.</p>
 
           <div className="space-y-3">
             {demoUsers.map((u) => (
-              <div key={u.email} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded">
+              <div key={u.email} className="flex items-center justify-between bg-[var(--app-surface)] p-3 rounded">
                 <div>
-                  <div className="text-sm font-semibold">{u.role}</div>
-                  <div className="text-xs text-gray-500">{u.email}</div>
+                  <div className="text-sm font-semibold text-[var(--app-text)]">{u.role}</div>
+                  <div className="text-xs text-[var(--app-muted)]">{u.email}</div>
                 </div>
                 <div>
                   <button
@@ -65,7 +65,7 @@ const LoginPage = () => {
             ))}
           </div>
 
-          <p className="mt-6 text-xs text-gray-500">Note: demo password is <strong>password</strong>. These accounts are for local testing only.</p>
+          <p className="mt-6 text-xs text-[var(--app-muted)]">Note: demo password is <strong>password</strong>. These accounts are for local testing only.</p>
         </div>
 
         <div className="px-4">

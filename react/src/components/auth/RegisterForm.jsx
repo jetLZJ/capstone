@@ -55,9 +55,7 @@ const RegisterForm = ({ onSuccess }) => {
       <form onSubmit={formik.handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              First Name
-            </label>
+            <label htmlFor="first_name" className="block text-sm font-medium text-[var(--app-text)]">First Name</label>
             <input
               id="first_name"
               name="first_name"
@@ -76,9 +74,7 @@ const RegisterForm = ({ onSuccess }) => {
           </div>
 
           <div>
-            <label htmlFor="last_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Last Name
-            </label>
+            <label htmlFor="last_name" className="block text-sm font-medium text-[var(--app-text)]">Last Name</label>
             <input
               id="last_name"
               name="last_name"
@@ -98,9 +94,7 @@ const RegisterForm = ({ onSuccess }) => {
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Email
-          </label>
+          <label htmlFor="email" className="block text-sm font-medium text-[var(--app-text)]">Email</label>
           <input
             id="email"
             name="email"
@@ -119,9 +113,7 @@ const RegisterForm = ({ onSuccess }) => {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Password
-          </label>
+          <label htmlFor="password" className="block text-sm font-medium text-[var(--app-text)]">Password</label>
           <input
             id="password"
             name="password"
@@ -140,9 +132,7 @@ const RegisterForm = ({ onSuccess }) => {
         </div>
 
         <div>
-          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Confirm Password
-          </label>
+          <label htmlFor="confirmPassword" className="block text-sm font-medium text-[var(--app-text)]">Confirm Password</label>
           <input
             id="confirmPassword"
             name="confirmPassword"

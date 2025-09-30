@@ -57,10 +57,10 @@ export default function MenuList({ onEdit, q, typeFilter, items: itemsProp }) {
       {loading ? <p>Loading...</p> : error ? <p className="text-red-600">{error}</p> : (
         <ul className="space-y-3">
           {items.map(it => (
-            <li key={it.id} className="p-3 bg-white dark:bg-gray-700 rounded shadow flex justify-between items-center">
+            <li key={it.id} className="p-3 bg-[var(--app-surface)] rounded shadow flex justify-between items-center">
               <div>
-                <div className="font-medium">{it.name} <span className="text-sm text-gray-500">${it.price}</span></div>
-                <div className="text-sm text-gray-600 dark:text-gray-300">{it.description}</div>
+                <div className="font-medium">{it.name} <span className="text-sm text-[var(--app-muted)]">${it.price}</span></div>
+                <div className="text-sm text-[var(--app-muted)]">{it.description}</div>
               </div>
               <div className="flex gap-2">
                 <button className="btn" onClick={() => onEdit(it)}>Edit</button>

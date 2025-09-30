@@ -20,7 +20,7 @@ export default function ShiftEditor({ shift, onSaved, onCancel }) {
   };
 
   return (
-    <form onSubmit={submit} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+  <form onSubmit={submit} className="bg-[var(--app-surface)] p-4 rounded shadow">
       <div className="mb-2"><label className="block text-sm">Name</label><input name="name" value={form.name} onChange={handleChange} className="w-full p-2 border rounded"/></div>
       <div className="mb-2"><label className="block text-sm">Role Required</label><input name="role_required" value={form.role_required} onChange={handleChange} className="w-full p-2 border rounded"/></div>
       <div className="mb-2 grid grid-cols-2 gap-2"><div><label className="block text-sm">Start</label><input name="start_time" value={form.start_time} onChange={handleChange} className="w-full p-2 border rounded"/></div><div><label className="block text-sm">End</label><input name="end_time" value={form.end_time} onChange={handleChange} className="w-full p-2 border rounded"/></div></div>

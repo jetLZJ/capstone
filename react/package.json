@@ -8,7 +8,8 @@
     "build": "vite build",
     "test": "vitest",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node ./scripts/create-shims.js || true"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.2",

@@ -47,56 +47,77 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await authFetch('/api/schedules/shifts');
-        if (mounted) setShifts(res.data?.shifts ?? []);
-      } catch (e) {
-        console.error('Failed to load shifts', e);
-        toast.error('Failed to load shifts');
-      }
-    })();
-    return () => { mounted = false; };
-  }, [authFetch, refreshKey]);
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center mb-2">
+          <div>
+            <h3 className="text-2xl font-semibold">Week of {weekStart.toLocaleDateString()}</h3>
+            <div className="text-sm text-gray-500">{addDays(weekStart,6).toLocaleDateString()}</div>
+          </div>
+          <div className="flex gap-3 items-center">
+            <button className="px-3 py-2 rounded-md bg-white border border-gray-200 shadow-sm text-sm text-gray-700" onClick={prevWeek}>Prev</button>
+            <button className="px-3 py-2 rounded-md bg-white border border-gray-200 shadow-sm text-sm text-gray-700" onClick={goToday}>Today</button>
+            <button className="px-3 py-2 rounded-md bg-white border border-gray-200 shadow-sm text-sm text-gray-700" onClick={nextWeek}>Next</button>
+            <button className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm shadow-md" onClick={() => onEdit && onEdit(null)}>+ Add Shift</button>
+          </div>
+        </div>
 
-  const weekDays = useMemo(() => {
-    const days = [];
-    for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
-    return days;
-  }, [weekStart]);
+        <DndContext onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+          <div className="grid grid-cols-7 gap-4">
+            {weekDays.map(day => {
+              const key = day.toDateString();
+              const items = (byDay[key] || []);
+              return (
+                <DroppableDay key={key} dayKey={key}>
+                  <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm min-h-[10rem]">
+                    <div className="flex justify-between items-center mb-3">
+                      <div>
+                        <div className="font-medium text-sm text-gray-800">{day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                        <div className="text-xs text-gray-400">{items.length} shifts</div>
+                      </div>
+                      <div className="text-xs text-gray-400">{/* optional icon */}</div>
+                    </div>
 
-  const inRange = (dt, start, end) => {
-    try {
-      const d = new Date(dt);
-      return d >= start && d < end;
-    } catch { return false; }
-  };
+                    <ul className="space-y-3">
+                      {items.map(s => (
+                        <li key={s.id}>
+                          <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm flex justify-between items-center">
+                            <div>
+                              <div className="font-medium text-sm">{s.name}</div>
+                              <div className="text-xs text-gray-500">{new Date(s.start_time || s.date || s.created_at || s.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {s.end_time ? new Date(s.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+                            </div>
+                            <div className="text-xs text-gray-400">{s.role || ''}</div>
+                          </div>
+                        </li>
+                      ))}
 
-  const byDay = useMemo(() => {
-    const nextWeek = addDays(weekStart, 7);
-    const map = {};
-    for (const day of weekDays) map[day.toDateString()] = [];
+                      {items.length === 0 && (
+                        <li className="text-sm text-gray-400">No shifts</li>
+                      )}
 
-    for (const s of shifts) {
-      const dt = s.start_time || s.date || s.created_at || s.start || null;
-      if (!dt) continue;
-      if (inRange(dt, weekStart, nextWeek)) {
-        const key = new Date(dt).toDateString();
-        map[key] = map[key] || [];
-        map[key].push(s);
-      }
-    }
+                      {overId === `day-${key}` && (
+                        <li>
+                          <div className="border-2 border-dashed border-gray-200 bg-gray-50 rounded-md p-3 text-center text-sm text-gray-500">Drop here</div>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </DroppableDay>
+              );
+            })}
+          </div>
 
-    return map;
-  }, [shifts, weekStart, weekDays]);
-
-  const prevWeek = () => setWeekStart(s => addDays(s, -7));
-  const nextWeek = () => setWeekStart(s => addDays(s, 7));
-  const goToday = () => setWeekStart(startOfWeek(new Date()));
-
-  const handleDragStart = (event) => {
-    const { active } = event;
-    if (!active) return;
+          <DragOverlay>
+            {activeShift ? (
+              <div className="p-3 bg-slate-900 text-white rounded-xl shadow-xl w-64">
+                <div className="font-semibold">{activeShift.name}</div>
+                <div className="text-sm text-slate-200">{new Date(activeShift.start_time || activeShift.date || activeShift.created_at || activeShift.start).toLocaleString()}</div>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+    );
     setActiveId(active.id);
     const id = active.id.replace('shift-', '');
     const shift = shifts.find(s => String(s.id) === String(id));

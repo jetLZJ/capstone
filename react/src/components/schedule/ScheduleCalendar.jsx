@@ -1,9 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import useAuth from '../../hooks/useAuth';
+
+function startOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() - day);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const { authFetch } = useAuth();
   const [shifts, setShifts] = useState([]);
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
 
   useEffect(() => {
     let mounted = true;
@@ -18,36 +29,63 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
     return () => { mounted = false; };
   }, [authFetch, refreshKey]);
 
-  const getDayName = (s) => {
+  const weekDays = useMemo(() => {
+    const days = [];
+    for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
+    return days;
+  }, [weekStart]);
+
+  const inRange = (dt, start, end) => {
     try {
-      const d = new Date(s);
-      if (isNaN(d)) return 'Unspecified';
-      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
-    } catch (_) { return 'Unspecified'; }
+      const d = new Date(dt);
+      return d >= start && d < end;
+    } catch { return false; }
   };
 
-  const grouped = shifts.reduce((acc, sh) => {
-    const day = getDayName(sh.start_time || sh.date || '');
-    acc[day] = acc[day] || [];
-    acc[day].push(sh);
-    return acc;
-  }, {});
+  const byDay = useMemo(() => {
+    const nextWeek = addDays(weekStart, 7);
+    const map = {};
+    for (const day of weekDays) map[day.toDateString()] = [];
 
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    for (const s of shifts) {
+      // try parse start_time first, fallback to created date or date field
+      const dt = s.start_time || s.date || s.created_at || s.start || null;
+      if (!dt) continue;
+      if (inRange(dt, weekStart, nextWeek)) {
+        const key = new Date(dt).toDateString();
+        map[key] = map[key] || [];
+        map[key].push(s);
+      }
+    }
+
+    return map;
+  }, [shifts, weekStart, weekDays]);
+
+  const prevWeek = () => setWeekStart(s => addDays(s, -7));
+  const nextWeek = () => setWeekStart(s => addDays(s, 7));
+  const goToday = () => setWeekStart(startOfWeek(new Date()));
 
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Week View (calendar skeleton)</h3>
-        <button className="btn btn-primary" onClick={() => onEdit && onEdit(null)}>New Shift</button>
+        <div>
+          <h3 className="text-lg font-semibold">Week of {weekStart.toLocaleDateString()}</h3>
+          <div className="text-sm text-gray-500">{addDays(weekStart,6).toLocaleDateString()}</div>
+        </div>
+        <div className="flex gap-2 items-center">
+          <button className="btn" onClick={prevWeek}>Prev</button>
+          <button className="btn" onClick={goToday}>Today</button>
+          <button className="btn" onClick={nextWeek}>Next</button>
+          <button className="btn btn-primary" onClick={() => onEdit && onEdit(null)}>New Shift</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-7 gap-3">
-        {days.map(d => (
-          <div key={d} className="p-3 bg-white dark:bg-gray-800 rounded shadow min-h-[8rem]">
-            <div className="font-medium">{d}</div>
+        {weekDays.map(day => (
+          <div key={day.toDateString()} className="p-3 bg-white dark:bg-gray-800 rounded shadow min-h-[8rem]">
+            <div className="font-medium">{day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
             <ul className="mt-2 space-y-2">
-              {(grouped[d] || []).map(s => (
+              {(byDay[day.toDateString()] || []).map(s => (
                 <li key={s.id} className="p-2 bg-gray-50 dark:bg-gray-700 rounded flex justify-between items-start">
                   <div>
                     <div className="font-semibold">{s.name}</div>
@@ -59,7 +97,7 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
                   </div>
                 </li>
               ))}
-              {(!grouped[d] || grouped[d].length === 0) && (
+              {(!(byDay[day.toDateString()] || []).length) && (
                 <li className="text-sm text-gray-400">No shifts</li>
               )}
             </ul>

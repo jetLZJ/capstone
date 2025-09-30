@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import useAuth from '../../hooks/useAuth';
 import { DndContext, useDraggable, useDroppable, DragOverlay } from '@dnd-kit/core';
+import { toast } from 'react-toastify';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -11,6 +12,14 @@ function startOfWeek(date) {
 }
 
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+
+function parseISOToDate(iso) {
+  try { return new Date(iso); } catch { return null; }
+}
+
+function timeOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
 
 function DraggableShift({ shift }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `shift-${shift.id}` }) || {};
@@ -51,6 +60,7 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
         if (mounted) setShifts(res.data?.shifts ?? []);
       } catch (e) {
         console.error('Failed to load shifts', e);
+        toast.error('Failed to load shifts');
       }
     })();
     return () => { mounted = false; };
@@ -105,6 +115,39 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
     setOverId(over?.id || null);
   };
 
+  const checkOverlapAndConfirm = (shift, targetDay) => {
+    // build new start/end based on targetDay but preserve time-of-day
+    const oldStart = parseISOToDate(shift.start_time || shift.date || shift.created_at || shift.start);
+    const oldEnd = parseISOToDate(shift.end_time || shift.end || (shift.start_time ? new Date(shift.start_time).getTime() + 60*60*1000 : null));
+    const newStart = new Date(targetDay);
+    if (!isNaN(oldStart)) newStart.setHours(oldStart.getHours(), oldStart.getMinutes(), oldStart.getSeconds(), 0);
+
+    let newEnd = null;
+    if (shift.end_time) {
+      const endDt = parseISOToDate(shift.end_time);
+      if (!isNaN(endDt)) {
+        newEnd = new Date(targetDay);
+        newEnd.setHours(endDt.getHours(), endDt.getMinutes(), endDt.getSeconds(), 0);
+      }
+    } else if (!isNaN(oldStart)) {
+      // assume 1 hour shift if no explicit end
+      newEnd = new Date(newStart.getTime() + 60*60*1000);
+    }
+
+    // check against existing shifts on that day
+    const dayKey = newStart.toDateString();
+    const others = (byDay[dayKey] || []).filter(s => String(s.id) !== String(shift.id));
+    for (const o of others) {
+      const oStart = parseISOToDate(o.start_time || o.date || o.created_at || o.start);
+      let oEnd = parseISOToDate(o.end_time || o.end);
+      if (isNaN(oEnd) && !isNaN(oStart)) oEnd = new Date(oStart.getTime() + 60*60*1000);
+      if (!isNaN(oStart) && !isNaN(oEnd) && newStart && newEnd) {
+        if (timeOverlap(newStart, newEnd, oStart, oEnd)) return true;
+      }
+    }
+    return false;
+  };
+
   const handleDragEnd = async (event) => {
     const { active, over } = event;
     setActiveId(null);
@@ -128,12 +171,24 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
       newDt.setHours(oldDt.getHours(), oldDt.getMinutes(), oldDt.getSeconds(), 0);
     }
 
+    // soft conflict detection: ask user to confirm if overlap detected
+    const hasConflict = checkOverlapAndConfirm(shift, targetDay);
+    if (hasConflict) {
+      const confirmMove = window.confirm('This move will create an overlapping shift. Proceed?');
+      if (!confirmMove) {
+        toast.info('Move cancelled');
+        return;
+      }
+    }
+
     try {
       await authFetch(`/api/schedules/shifts/${shiftId}`, { method: 'PATCH', data: JSON.stringify({ start_time: newDt.toISOString() }) });
       // refresh local state: optimistically update
       setShifts(prev => prev.map(s => s.id === shift.id ? { ...s, start_time: newDt.toISOString() } : s));
+      toast.success('Shift moved');
     } catch (err) {
       console.error('Failed to move shift', err);
+      toast.error('Failed to move shift');
     }
   };
 

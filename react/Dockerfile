@@ -3,7 +3,10 @@ FROM node:18-alpine
 WORKDIR /app
 COPY package.json .
 COPY package-lock.json* .
-RUN npm install
+# install with legacy-peer-deps to avoid strict peerDependency resolution failures
+# during docker builds (common for mixed-version dev deps). Replace with
+# stricter dependency resolution in package.json/package-lock.json when ready.
+RUN npm install --legacy-peer-deps --no-audit --no-fund
 
 COPY . .
 

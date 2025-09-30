@@ -33,6 +33,7 @@ except Exception:
 from auth import bp as auth_bp
 from menu import bp as menu_bp
 from schedule import bp as schedule_bp
+from analytics import bp as analytics_bp
 
 
 def create_app(test_config=None):
@@ -71,9 +72,14 @@ def create_app(test_config=None):
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(menu_bp, url_prefix='/api/menu')
     app.register_blueprint(schedule_bp, url_prefix='/api/schedules')
+    app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
 
     @app.route('/ping')
     def ping():
+        return 'ok'
+        
+    @app.route('/health')
+    def health():
         return 'ok'
 
     return app

@@ -13,15 +13,14 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://proxyserver:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      },
-      '/ping': {
-        target: 'http://proxyserver:5000',
         changeOrigin: true
       },
-      '/add_data': {
-        target: 'http://proxyserver:5000',
+      '/health': {
+        target: 'http://proxyserver:8080',
+        changeOrigin: true
+      },
+      '/ping': {
+        target: 'http://proxyserver:8080',
         changeOrigin: true
       }
     }

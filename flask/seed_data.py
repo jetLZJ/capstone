@@ -198,6 +198,32 @@ def main():
     seed_orders(conn)
     conn.close()
     print('Seeding complete')
+    # Print one user per role for quick login testing
+    try:
+        print_test_users()
+    except Exception:
+        pass
 
 if __name__ == '__main__':
     main()
+
+
+def print_test_users():
+    """Prints one user email and the default password for each role (Admin, Manager, Staff, User).
+    This is helpful for manual testing of login flows. Assumes seeded users exist with password 'password'.
+    """
+    conn = sqlite3.connect(DB)
+    cur = conn.cursor()
+    roles = ['Admin', 'Manager', 'Staff', 'User']
+    out = {}
+    for r in roles:
+        cur.execute('SELECT u.email FROM users u JOIN roles ro ON u.role_id=ro.id WHERE ro.name=? LIMIT 1', (r,))
+        row = cur.fetchone()
+        if row:
+            out[r] = row[0]
+        else:
+            out[r] = None
+    conn.close()
+    print('\nTest users (password: "password")')
+    for role, email in out.items():
+        print(f"{role}: {email}")

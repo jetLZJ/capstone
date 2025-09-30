@@ -1,0 +1,21 @@
+/* Use @source inline() to explicitly generate utilities that are used
+	dynamically at runtime (Tailwind v4 recommended approach). We use
+	brace expansion to generate ranges and variants where helpful. */
+
+/* Font weights commonly used */
+@source inline("font-(thin,extralight,light,normal,medium,semibold,bold,extrabold,black)");
+
+/* Gray scale background and text (50..950) */
+@source inline("{bg-,text-}gray-{50,{100..900..100},950}");
+
+/* Primary and secondary color ranges */
+@source inline("{bg-,text-}primary-{50,{100..900..100},950}");
+@source inline("{bg-,text-}secondary-{50,{100..900..100},950}");
+
+/* Common utilities used via JS generation */
+@source inline("rounded(-none,-sm,-md,-lg,-xl,-2xl,-3xl,-full)");
+@source inline("shadow(-none,-sm,-md,-lg,-xl,-2xl,-inner)");
+@source inline("border-(gray,primary,secondary)-{50,{100..900..100},950}");
+
+/* Example for variants (hover/focus) if needed */
+@source inline("{hover:,focus:,}bg-primary-500");

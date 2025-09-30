@@ -165,3 +165,9 @@ def me():
             return jsonify({'msg': 'User not found'}), 404
         return jsonify({'id': row[0], 'first_name': row[1], 'last_name': row[2], 'email': row[3]})
     return inner()
+
+
+@bp.route('/status', methods=['GET'])
+def status():
+    """Check the status of the auth service"""
+    return jsonify({'status': 'online', 'service': 'auth'})

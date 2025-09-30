@@ -1,0 +1,42 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+**/.pytest_cache/
+**/.mypy_cache/
+**/.coverage
+
+# Editor and IDE files
+**/.vscode/
+**/.idea/
+**/*.sublime-workspace
+**/*.sublime-project
+
+# Virtual environments
+**/venv/
+**/env/
+**/.env/
+**/.venv/
+
+# Node/frontend assets
+**/node_modules/
+
+# Tests and docs
+**/tests/
+**/docs/
+
+# Development configs
+README.md
+docker-compose*.yml
+Dockerfile*
+**/.dockerignore
+
+# OS specific
+**/.DS_Store
+**/Thumbs.db

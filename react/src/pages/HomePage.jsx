@@ -20,7 +20,7 @@ const HomePage = () => {
             <p className="text-[var(--app-muted)] mb-6">Browse our menu, place orders, and enjoy a seamless dining experience.</p>
             <Link
               to="/login"
-              state={{ role: 'customer' }}
+              state={{ role: 'User' }}
               className="inline-block bg-app-primary text-app-primary-contrast px-6 py-3 rounded-lg text-center font-medium hover:opacity-95 transition-shadow shadow-md"
             >
               Customer Login
@@ -32,7 +32,7 @@ const HomePage = () => {
             <p className="text-[var(--app-muted)] mb-6">Access management tools, scheduling, and restaurant operations.</p>
             <Link
               to="/login"
-              state={{ role: 'staff' }}
+              state={{ role: 'Staff' }}
               className="inline-block bg-app-surface text-app-text border border-[rgba(0,0,0,0.08)] px-6 py-3 rounded-lg text-center font-medium hover:bg-[color-mix(in_srgb,var(--app-surface) 90%, var(--app-bg) 10%)] transition"
             >
               Staff Login

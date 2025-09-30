@@ -17,6 +17,13 @@ const LoginPage = () => {
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
+  // role may be passed from homepage via location.state.role or query param ?role=User
+  const roleFromState = location.state?.role;
+  const qs = new URLSearchParams(location.search);
+  const roleParam = qs.get('role');
+  const role = (roleFromState || roleParam || 'User').toString();
+  const roleKey = role?.toLowerCase() || 'user';
+  const isUser = roleKey === 'user';
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -41,36 +48,15 @@ const LoginPage = () => {
 
   return (
     <div className="flex items-center justify-center min-h-[80vh] px-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        <div className="px-6 py-8 bg-[var(--app-surface)] rounded-lg shadow-md">
-          <h1 className="text-4xl font-extrabold mb-3 text-[var(--app-primary)]">Welcome to Restaurant Manager</h1>
-          <p className="text-[var(--app-muted)] mb-6">Manage your menu, shifts, and analytics in one place. Use the demo credentials below to quickly test different roles.</p>
-
-          <div className="space-y-3">
-            {demoUsers.map((u) => (
-              <div key={u.email} className="flex items-center justify-between bg-[var(--app-surface)] p-3 rounded">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--app-text)]">{u.role}</div>
-                  <div className="text-xs text-[var(--app-muted)]">{u.email}</div>
-                </div>
-                <div>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => handleQuickLogin(u.email)}
-                  >
-                    Quick Login
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-6 text-xs text-[var(--app-muted)]">Note: demo password is <strong>password</strong>. These accounts are for local testing only.</p>
-        </div>
-
-        <div className="px-4">
-          <AuthContainer onSuccess={handleAuthSuccess} />
-        </div>
+      <div className="w-full max-w-lg">
+        <AuthContainer
+          onSuccess={handleAuthSuccess}
+          role={roleKey}
+          title={isUser ? 'Customer Portal' : 'Staff Portal'}
+          subtitle={isUser ? 'Sign in to your account or create a new one' : 'Access restaurant management systems'}
+          demo={isUser ? { email: 'user1@example.com', password: 'password' } : demoUsers.filter(u => u.role.toLowerCase() !== 'user')}
+          onQuickLogin={(email) => handleQuickLogin(email)}
+        />
       </div>
     </div>
   );

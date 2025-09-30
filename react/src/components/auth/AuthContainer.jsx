@@ -2,42 +2,80 @@ import { useState } from 'react';
 import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
 
-const AuthContainer = ({ onSuccess }) => {
+const AuthContainer = ({ onSuccess, role = 'user', demo = null, onQuickLogin = null }) => {
   const [activeTab, setActiveTab] = useState('login');
+  const roleKey = role?.toString().toLowerCase();
+  const allowRegister = roleKey === 'user';
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
   };
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 py-8 bg-[var(--app-surface)] rounded-lg shadow-md">
-      <div className="flex mb-6 border-b">
-        <button
-          className={`flex-1 py-3 font-medium text-center ${
-            activeTab === 'login'
-              ? 'text-[var(--app-accent)] border-b-2 border-[var(--app-accent)]'
-              : 'text-[var(--app-muted)] hover:text-[var(--app-text)]'
-          }`}
-          onClick={() => handleTabChange('login')}
-        >
-          Login
-        </button>
-        <button
-          className={`flex-1 py-3 font-medium text-center ${
-            activeTab === 'register'
-              ? 'text-[var(--app-accent)] border-b-2 border-[var(--app-accent)]'
-              : 'text-[var(--app-muted)] hover:text-[var(--app-text)]'
-          }`}
-          onClick={() => handleTabChange('register')}
-        >
-          Register
-        </button>
+    <div className={`${allowRegister ? 'w-full max-w-md mx-auto px-4 py-8' : 'w-full max-w-sm mx-auto px-6 py-10 text-center'} bg-[var(--app-surface)] rounded-lg shadow-md`}>
+      {/* title/subtitle */}
+      {typeof title !== 'undefined' && (
+        <div className="mb-3 text-center">
+          <h2 className="text-2xl font-semibold text-[var(--app-primary)]">{title}</h2>
+          {typeof subtitle !== 'undefined' && <p className="text-[var(--app-muted)] mt-1">{subtitle}</p>}
+        </div>
+      )}
+
+      <div className="flex mb-6 justify-center">
+        <div className="inline-flex rounded-full bg-[var(--app-bg)] p-1">
+          <button
+            className={`px-6 py-2 rounded-full font-medium ${activeTab === 'login' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)]'}`}
+            onClick={() => handleTabChange('login')}
+          >
+            Sign In
+          </button>
+          {allowRegister && (
+            <button
+              className={`px-6 py-2 rounded-full font-medium ${activeTab === 'register' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)]'}`}
+              onClick={() => handleTabChange('register')}
+            >
+              Register
+            </button>
+          )}
+        </div>
       </div>
 
       {activeTab === 'login' ? (
-        <LoginForm onSuccess={onSuccess} />
+        <LoginForm onSuccess={onSuccess} role={roleKey} />
       ) : (
         <RegisterForm onSuccess={onSuccess} />
+      )}
+
+      {/* demo block below when provided */}
+      {demo && (
+        <div className="mt-6 text-center text-[var(--app-muted)]">
+          {Array.isArray(demo) ? (
+            <div className="space-y-3">
+              {demo.map((d) => (
+                <div key={d.email} className="flex items-center justify-between bg-[var(--app-surface)] p-3 rounded">
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--app-text)]">{d.role}</div>
+                    <div className="text-xs text-[var(--app-muted)]">{d.email}</div>
+                  </div>
+                  <div>
+                    {onQuickLogin && (
+                      <button className="btn btn-outline btn-sm" onClick={() => onQuickLogin(d.email)}>Quick Login</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <div className="text-sm mb-2">Demo credentials</div>
+              <div className="text-sm">Email: <span className="font-medium text-[var(--app-text)]">{demo.email}</span></div>
+              <div className="text-sm mb-3">Password: <span className="font-medium text-[var(--app-text)]">{demo.password}</span></div>
+              {onQuickLogin && (
+                <button className="btn btn-outline btn-sm" onClick={() => onQuickLogin(demo.email)}>Quick Login as Demo</button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -15,6 +15,7 @@ const RegisterForm = ({ onSuccess }) => {
       email: '',
       password: '',
       confirmPassword: ''
+      , avatar_preview: '', avatar_file: null
     },
     validationSchema: Yup.object({
       first_name: Yup.string()
@@ -37,7 +38,23 @@ const RegisterForm = ({ onSuccess }) => {
       setLoading(true);
       try {
         // Remove confirmPassword field before sending to API
-        const { confirmPassword, ...userData } = values;
+        const { confirmPassword, avatar_preview, avatar_file, ...userData } = values;
+        // If an avatar file was selected, upload it first and include returned URL
+        if (avatar_file) {
+          try {
+            const uploaded = await uploadAvatar(avatar_file);
+            if (uploaded?.url) {
+              userData.avatar = uploaded.url;
+            }
+          } catch (uploadErr) {
+            console.error('Avatar upload failed', uploadErr);
+            toast.error('Failed to upload avatar. Try again or continue without one.');
+          }
+        } else if (avatar_preview) {
+          // fallback: include base64 preview if file wasn't stored
+          userData.avatar = avatar_preview;
+        }
+
         await register(userData);
         toast.success('Registration successful');
         if (onSuccess) onSuccess();
@@ -50,9 +67,50 @@ const RegisterForm = ({ onSuccess }) => {
     }
   });
 
+  // Helper to upload avatar file to backend
+  const uploadAvatar = async (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/uploads/avatar', {
+      method: 'POST',
+      body: form
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    return await res.json(); // expect { url: 'https://...' }
+  };
+
   return (
     <div className="w-full max-w-md">
       <form onSubmit={formik.handleSubmit} className="space-y-4">
+        {/* Avatar upload */}
+        <div className="flex flex-col items-center">
+          <div className="w-20 h-20 rounded-full bg-[var(--app-bg)] flex items-center justify-center mb-2 overflow-hidden">
+            {formik.values.avatar_preview ? (
+              <img src={formik.values.avatar_preview} alt="avatar preview" className="w-full h-full object-cover" />
+            ) : (
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[var(--app-muted)]">
+                <path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5 0-9 2.5-9 5v1h18v-1c0-2.5-4-5-9-5z" fill="currentColor"/>
+              </svg>
+            )}
+          </div>
+          <label className="text-sm text-[var(--app-muted)] mb-3">Upload profile picture (optional)</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                formik.setFieldValue('avatar_file', file);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  // attach preview to form state
+                  formik.setFieldValue('avatar_preview', reader.result);
+                };
+                reader.readAsDataURL(file);
+              }
+            }}
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="first_name" className="block text-sm font-medium text-[var(--app-text)]">First Name</label>

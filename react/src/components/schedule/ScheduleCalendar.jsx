@@ -1,9 +1,16 @@
 import { useEffect, useState, useMemo } from 'react';
 import useAuth from '../../hooks/useAuth';
-import { DndContext, useDraggable, useDroppable, DragOverlay } from '@dnd-kit/core';
-import { startOfWeek, addDays, parseISOToDate, timeOverlap } from './scheduleHelpers';
+import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
 
-// helpers are imported from scheduleHelpers.js
+function startOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() - day);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 function DraggableShift({ shift }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `shift-${shift.id}` }) || {};
@@ -44,6 +51,7 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
         if (mounted) setShifts(res.data?.shifts ?? []);
       } catch (e) {
         console.error('Failed to load shifts', e);
+        toast.error('Failed to load shifts');
       }
     })();
     return () => { mounted = false; };
@@ -84,20 +92,6 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const nextWeek = () => setWeekStart(s => addDays(s, 7));
   const goToday = () => setWeekStart(startOfWeek(new Date()));
 
-  const handleDragStart = (event) => {
-    const { active } = event;
-    if (!active) return;
-    setActiveId(active.id);
-    const id = active.id.replace('shift-', '');
-    const shift = shifts.find(s => String(s.id) === String(id));
-    setActiveShift(shift || null);
-  };
-
-  const handleDragOver = (event) => {
-    const { over } = event;
-    setOverId(over?.id || null);
-  };
-
   const handleDragEnd = async (event) => {
     const { active, over } = event;
     setActiveId(null);
@@ -121,32 +115,14 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
       newDt.setHours(oldDt.getHours(), oldDt.getMinutes(), oldDt.getSeconds(), 0);
     }
 
-    // soft conflict detection: ask user to confirm if overlap detected
-    const newStart = newDt;
-    const newEnd = shift.end_time ? parseISOToDate(shift.end_time) : new Date(newStart.getTime() + 60*60*1000);
-    const dayKeyStr = newStart.toDateString();
-    const others = (byDay[dayKeyStr] || []).filter(s => String(s.id) !== String(shift.id));
-    let conflict = false;
-    for (const o of others) {
-      const oStart = parseISOToDate(o.start_time || o.date || o.created_at || o.start);
-      const oEnd = parseISOToDate(o.end_time || o.end) || new Date(oStart.getTime() + 60*60*1000);
-      if (!isNaN(oStart) && !isNaN(oEnd) && timeOverlap(newStart, newEnd, oStart, oEnd)) {
-        conflict = true; break;
-      }
-    }
-
-    if (conflict) {
-      if (!window.confirm('This move will create an overlapping shift. Proceed?')) {
-        return;
-      }
-    }
-
     try {
       await authFetch(`/api/schedules/shifts/${shiftId}`, { method: 'PATCH', data: JSON.stringify({ start_time: newDt.toISOString() }) });
       // refresh local state: optimistically update
       setShifts(prev => prev.map(s => s.id === shift.id ? { ...s, start_time: newDt.toISOString() } : s));
+      toast.success('Shift moved');
     } catch (err) {
       console.error('Failed to move shift', err);
+      toast.error('Failed to move shift');
     }
   };
 
@@ -180,23 +156,11 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
                   {(!(byDay[day.toDateString()] || []).length) && (
                     <li className="text-sm text-gray-400">No shifts</li>
                   )}
-                  {overId === `day-${day.toDateString()}` && (
-                    <li className="text-sm text-gray-500 italic">Drop here</li>
-                  )}
                 </ul>
               </div>
             </DroppableDay>
           ))}
         </div>
-
-        <DragOverlay>
-          {activeShift ? (
-            <div className="p-3 bg-white dark:bg-gray-800 rounded shadow-lg w-64 border dark:border-gray-700">
-              <div className="font-semibold">{activeShift.name}</div>
-              <div className="text-sm text-gray-500">{new Date(activeShift.start_time || activeShift.date || activeShift.created_at || activeShift.start).toLocaleString()}</div>
-            </div>
-          ) : null}
-        </DragOverlay>
       </DndContext>
     </div>
   );

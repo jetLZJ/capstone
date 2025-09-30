@@ -47,6 +47,9 @@ db.sqlite3-journal
 flask/data/*.db
 flask/data/*.sqlite3
 
+# Uploaded static files (created at runtime)
+flask/html/uploads/
+
 # Flask instance folder
 instance/
 

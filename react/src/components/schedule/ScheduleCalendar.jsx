@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import useAuth from '../../hooks/useAuth';
+import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -10,6 +11,29 @@ function startOfWeek(date) {
 }
 
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+
+function DraggableShift({ shift }) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `shift-${shift.id}` });
+  return (
+    <div ref={setNodeRef} {...attributes} {...listeners} style={{ transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined }}>
+      <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded flex justify-between items-start">
+        <div>
+          <div className="font-semibold">{shift.name}</div>
+          <div className="text-sm text-gray-600 dark:text-gray-300">{shift.start_time} - {shift.end_time}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DroppableDay({ children, dayKey, onDrop }) {
+  const { isOver, setNodeRef } = useDroppable({ id: `day-${dayKey}` });
+  return (
+    <div ref={setNodeRef} className={`${isOver ? 'ring-2 ring-blue-400' : ''}`}>
+      {children}
+    </div>
+  );
+}
 
 export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const { authFetch } = useAuth();
@@ -48,7 +72,6 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
     for (const day of weekDays) map[day.toDateString()] = [];
 
     for (const s of shifts) {
-      // try parse start_time first, fallback to created date or date field
       const dt = s.start_time || s.date || s.created_at || s.start || null;
       if (!dt) continue;
       if (inRange(dt, weekStart, nextWeek)) {
@@ -65,6 +88,36 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const nextWeek = () => setWeekStart(s => addDays(s, 7));
   const goToday = () => setWeekStart(startOfWeek(new Date()));
 
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    if (!over || !active) return;
+    const activeId = active.id; // shift-<id>
+    const overId = over.id; // day-<dayKey>
+    if (!activeId.startsWith('shift-') || !overId.startsWith('day-')) return;
+    const shiftId = activeId.replace('shift-', '');
+    const dayKey = overId.replace('day-', '');
+
+    // find shift
+    const shift = shifts.find(s => String(s.id) === String(shiftId));
+    if (!shift) return;
+
+    // compute new start_time: take time part from shift.start_time if present, otherwise keep same date at midnight
+    const oldDt = new Date(shift.start_time || shift.date || shift.created_at || shift.start);
+    const targetDay = new Date(dayKey);
+    let newDt = new Date(targetDay);
+    if (!isNaN(oldDt)) {
+      newDt.setHours(oldDt.getHours(), oldDt.getMinutes(), oldDt.getSeconds(), 0);
+    }
+
+    try {
+      await authFetch(`/api/schedules/shifts/${shiftId}`, { method: 'PATCH', data: JSON.stringify({ start_time: newDt.toISOString() }) });
+      // refresh local state: optimistically update
+      setShifts(prev => prev.map(s => s.id === shift.id ? { ...s, start_time: newDt.toISOString() } : s));
+    } catch (err) {
+      console.error('Failed to move shift', err);
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -80,30 +133,27 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-3">
-        {weekDays.map(day => (
-          <div key={day.toDateString()} className="p-3 bg-white dark:bg-gray-800 rounded shadow min-h-[8rem]">
-            <div className="font-medium">{day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
-            <ul className="mt-2 space-y-2">
-              {(byDay[day.toDateString()] || []).map(s => (
-                <li key={s.id} className="p-2 bg-gray-50 dark:bg-gray-700 rounded flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold">{s.name}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-300">{s.start_time} - {s.end_time}</div>
-                    <div className="text-sm text-gray-500">Role: {s.role_required || s.role || 'N/A'}</div>
-                  </div>
-                  <div className="ml-2 flex flex-col gap-2">
-                    <button className="btn btn-sm" onClick={() => onEdit && onEdit(s)}>Edit</button>
-                  </div>
-                </li>
-              ))}
-              {(!(byDay[day.toDateString()] || []).length) && (
-                <li className="text-sm text-gray-400">No shifts</li>
-              )}
-            </ul>
-          </div>
-        ))}
-      </div>
+      <DndContext onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-7 gap-3">
+          {weekDays.map(day => (
+            <DroppableDay key={day.toDateString()} dayKey={day.toDateString()}>
+              <div className="p-3 bg-white dark:bg-gray-800 rounded shadow min-h-[8rem]">
+                <div className="font-medium">{day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                <ul className="mt-2 space-y-2">
+                  {(byDay[day.toDateString()] || []).map(s => (
+                    <li key={s.id}>
+                      <DraggableShift shift={s} />
+                    </li>
+                  ))}
+                  {(!(byDay[day.toDateString()] || []).length) && (
+                    <li className="text-sm text-gray-400">No shifts</li>
+                  )}
+                </ul>
+              </div>
+            </DroppableDay>
+          ))}
+        </div>
+      </DndContext>
     </div>
   );
 }

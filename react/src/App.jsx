@@ -1,63 +1,64 @@
-import { useState, useEffect } from 'react'
-import './App.css'
-import axios from 'axios'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Suspense, lazy } from 'react';
+import './App.css';
+
+// Context
+import { AuthProvider } from './context/AuthContext';
+
+// Layout
+import MainLayout from './components/layout/MainLayout';
+
+// Pages
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+
+// Components
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import LoadingSpinner from './components/ui/LoadingSpinner';
+
+// Lazy-loaded components
+const MenuPage = lazy(() => import('./pages/MenuPage'));
+const SchedulePage = lazy(() => import('./pages/SchedulePage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function App() {
-  const [message, setMessage] = useState('')
-  const [insertedId, setInsertedId] = useState(null)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    // Ping the server when the component mounts
-    axios.get('/ping')
-      .then(response => {
-        setMessage('Server is online: ' + response.data)
-      })
-      .catch(err => {
-        setError('Error connecting to server: ' + err.message)
-      })
-  }, [])
-
-  const handleAddData = async () => {
-    try {
-      setError(null)
-      const response = await axios.post('/add_data')
-      if (response.data.ok) {
-        setInsertedId(response.data.inserted_id)
-        setMessage('Data added successfully!')
-      } else {
-        setError('Failed to add data: ' + response.data.error)
-      }
-    } catch (err) {
-      setError('Error: ' + err.message)
-    }
-  }
-
   return (
-    <div className="container">
-      <h1>Capstone React App</h1>
-      
-      <div className="card">
-        <h2>Server Status</h2>
-        {message && <p className="message">{message}</p>}
-        {error && <p className="error">{error}</p>}
-      </div>
-
-      <div className="card">
-        <button onClick={handleAddData}>
-          Add Data to Database
-        </button>
-        {insertedId !== null && (
-          <p>Successfully added data with ID: {insertedId}</p>
-        )}
-      </div>
-
-      <div className="footer">
-        <p>
-          Built with React + Vite
-        </p>
-      </div>
-    </div>
+    <AuthProvider>
+      <Router>
+        <MainLayout>
+          <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              
+              {/* Protected Routes */}
+              <Route path="/menu" element={
+                <ProtectedRoute>
+                  <MenuPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/schedule" element={
+                <ProtectedRoute>
+                  <SchedulePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/analytics" element={
+                <ProtectedRoute>
+                  <AnalyticsPage />
+                </ProtectedRoute>
+              } />
+              
+              {/* Not Found Route */}
+              <Route path="/404" element={<NotFoundPage />} />
+              <Route path="*" element={<Navigate to="/404" />} />
+            </Routes>
+          </Suspense>
+        </MainLayout>
+      </Router>
+    </AuthProvider>
   )
 }
 

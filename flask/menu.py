@@ -1,8 +1,14 @@
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from utils import get_db, allowed_image
 from werkzeug.utils import secure_filename
 import os
 from typing import Optional
+# Import permissions decorator robustly: prefer relative import when running as a package,
+# but fall back to absolute import when running app as a script in Docker.
+try:
+    from .permissions import require_roles
+except Exception:
+    from permissions import require_roles
 
 bp = Blueprint('menu', __name__)
 
@@ -16,7 +22,8 @@ def is_manager(user_id: int) -> bool:
         pass
     cur.execute('SELECT r.name FROM users u JOIN roles r ON u.role_id=r.id WHERE u.id=?', (user_id,))
     row = cur.fetchone()
-    return bool(row and row[0] == 'Manager')
+    # Allow Admins to have manager-level permissions as well
+    return bool(row and row[0] in ('Manager', 'Admin'))
 
 
 @bp.route('/', methods=['GET'])
@@ -25,15 +32,17 @@ def list_menu():
     t = request.args.get('type')
     conn = get_db()
     cur = conn.cursor()
-    sql = 'SELECT id, name, price, description, img_link, qty_left, discount FROM menu_items'
+    # include the type name via LEFT JOIN so frontend can display and filter by it
+    sql = 'SELECT m.id, m.name, m.price, m.description, m.img_link, m.qty_left, m.discount, t.name as type_name FROM menu_items m LEFT JOIN types t ON m.type_id=t.id'
     params = []
     clauses = []
     if q:
-        clauses.append('name LIKE ? OR description LIKE ?')
+        clauses.append('(m.name LIKE ? OR m.description LIKE ?)')
         like = f"%{q}%"
         params.extend([like, like])
     if t:
-        clauses.append('type_id = (SELECT id FROM types WHERE name=?)')
+        # filter by joined type name
+        clauses.append('t.name = ?')
         params.append(t)
     if clauses:
         sql += ' WHERE ' + ' AND '.join(clauses)
@@ -49,12 +58,8 @@ def create_item():
         from flask_jwt_extended import jwt_required, get_jwt_identity
     except Exception:
         return jsonify({'msg': 'JWT extension not available'}), 501
-
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
-        uid = get_jwt_identity()
-        if not is_manager(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         data = request.get_json() or {}
         name = data.get('name')
         price = data.get('price', 0.0)
@@ -80,7 +85,7 @@ def create_item():
 def get_item(item_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('SELECT id, name, price, description, img_link, qty_left, discount FROM menu_items WHERE id=?', (item_id,))
+    cur.execute('SELECT m.id, m.name, m.price, m.description, m.img_link, m.qty_left, m.discount, t.name as type_name FROM menu_items m LEFT JOIN types t ON m.type_id=t.id WHERE m.id=?', (item_id,))
     row = cur.fetchone()
     if not row:
         return jsonify({'msg': 'not found'}), 404
@@ -94,11 +99,8 @@ def update_item(item_id):
     except Exception:
         return jsonify({'msg': 'JWT extension not available'}), 501
 
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
-        uid = get_jwt_identity()
-        if not is_manager(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         data = request.get_json() or {}
         fields = []
         params = []
@@ -126,11 +128,8 @@ def delete_item(item_id):
     except Exception:
         return jsonify({'msg': 'JWT extension not available'}), 501
 
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
-        uid = get_jwt_identity()
-        if not is_manager(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         conn = get_db()
         cur = conn.cursor()
         cur.execute('DELETE FROM menu_items WHERE id=?', (item_id,))
@@ -147,11 +146,8 @@ def upload_image(item_id):
     except Exception:
         return jsonify({'msg': 'JWT extension not available'}), 501
 
-    @jwt_required()
+    @require_roles('Manager')
     def inner():
-        uid = get_jwt_identity()
-        if not is_manager(uid):
-            return jsonify({'msg': 'manager role required'}), 403
         if 'file' not in request.files:
             return jsonify({'msg': 'file required'}), 400
         f = request.files['file']
@@ -194,4 +190,14 @@ def upload_image(item_id):
 def uploaded_file(filename):
     upload_dir = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
     return send_from_directory(upload_dir, filename)
+
+
+@bp.route('/types', methods=['GET'])
+def list_types():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT id, name FROM types ORDER BY name')
+    rows = cur.fetchall()
+    types = [dict(row) for row in rows]
+    return jsonify({'types': types})
 

@@ -1,21 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import useAuth from '../../hooks/useAuth';
-import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core';
+import { DndContext, useDraggable, useDroppable, DragOverlay } from '@dnd-kit/core';
+import { startOfWeek, addDays, parseISOToDate, timeOverlap } from './scheduleHelpers';
 
-function startOfWeek(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() - day);
-  d.setHours(0,0,0,0);
-  return d;
-}
-
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+// helpers are imported from scheduleHelpers.js
 
 function DraggableShift({ shift }) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `shift-${shift.id}` });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `shift-${shift.id}` }) || {};
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners} style={{ transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined }}>
+    <div ref={setNodeRef} {...attributes} {...listeners} className={`${isDragging ? 'opacity-60 scale-105 shadow-lg' : ''}`}>
       <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded flex justify-between items-start">
         <div>
           <div className="font-semibold">{shift.name}</div>
@@ -26,7 +19,7 @@ function DraggableShift({ shift }) {
   );
 }
 
-function DroppableDay({ children, dayKey, onDrop }) {
+function DroppableDay({ children, dayKey }) {
   const { isOver, setNodeRef } = useDroppable({ id: `day-${dayKey}` });
   return (
     <div ref={setNodeRef} className={`${isOver ? 'ring-2 ring-blue-400' : ''}`}>
@@ -39,6 +32,9 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const { authFetch } = useAuth();
   const [shifts, setShifts] = useState([]);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [activeShift, setActiveShift] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+  const [overId, setOverId] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -88,8 +84,25 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
   const nextWeek = () => setWeekStart(s => addDays(s, 7));
   const goToday = () => setWeekStart(startOfWeek(new Date()));
 
+  const handleDragStart = (event) => {
+    const { active } = event;
+    if (!active) return;
+    setActiveId(active.id);
+    const id = active.id.replace('shift-', '');
+    const shift = shifts.find(s => String(s.id) === String(id));
+    setActiveShift(shift || null);
+  };
+
+  const handleDragOver = (event) => {
+    const { over } = event;
+    setOverId(over?.id || null);
+  };
+
   const handleDragEnd = async (event) => {
     const { active, over } = event;
+    setActiveId(null);
+    setActiveShift(null);
+    setOverId(null);
     if (!over || !active) return;
     const activeId = active.id; // shift-<id>
     const overId = over.id; // day-<dayKey>
@@ -101,12 +114,31 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
     const shift = shifts.find(s => String(s.id) === String(shiftId));
     if (!shift) return;
 
-    // compute new start_time: take time part from shift.start_time if present, otherwise keep same date at midnight
     const oldDt = new Date(shift.start_time || shift.date || shift.created_at || shift.start);
     const targetDay = new Date(dayKey);
     let newDt = new Date(targetDay);
     if (!isNaN(oldDt)) {
       newDt.setHours(oldDt.getHours(), oldDt.getMinutes(), oldDt.getSeconds(), 0);
+    }
+
+    // soft conflict detection: ask user to confirm if overlap detected
+    const newStart = newDt;
+    const newEnd = shift.end_time ? parseISOToDate(shift.end_time) : new Date(newStart.getTime() + 60*60*1000);
+    const dayKeyStr = newStart.toDateString();
+    const others = (byDay[dayKeyStr] || []).filter(s => String(s.id) !== String(shift.id));
+    let conflict = false;
+    for (const o of others) {
+      const oStart = parseISOToDate(o.start_time || o.date || o.created_at || o.start);
+      const oEnd = parseISOToDate(o.end_time || o.end) || new Date(oStart.getTime() + 60*60*1000);
+      if (!isNaN(oStart) && !isNaN(oEnd) && timeOverlap(newStart, newEnd, oStart, oEnd)) {
+        conflict = true; break;
+      }
+    }
+
+    if (conflict) {
+      if (!window.confirm('This move will create an overlapping shift. Proceed?')) {
+        return;
+      }
     }
 
     try {
@@ -133,7 +165,7 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
         </div>
       </div>
 
-      <DndContext onDragEnd={handleDragEnd}>
+      <DndContext onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         <div className="grid grid-cols-7 gap-3">
           {weekDays.map(day => (
             <DroppableDay key={day.toDateString()} dayKey={day.toDateString()}>
@@ -148,11 +180,23 @@ export default function ScheduleCalendar({ onEdit, refreshKey }) {
                   {(!(byDay[day.toDateString()] || []).length) && (
                     <li className="text-sm text-gray-400">No shifts</li>
                   )}
+                  {overId === `day-${day.toDateString()}` && (
+                    <li className="text-sm text-gray-500 italic">Drop here</li>
+                  )}
                 </ul>
               </div>
             </DroppableDay>
           ))}
         </div>
+
+        <DragOverlay>
+          {activeShift ? (
+            <div className="p-3 bg-white dark:bg-gray-800 rounded shadow-lg w-64 border dark:border-gray-700">
+              <div className="font-semibold">{activeShift.name}</div>
+              <div className="text-sm text-gray-500">{new Date(activeShift.start_time || activeShift.date || activeShift.created_at || activeShift.start).toLocaleString()}</div>
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

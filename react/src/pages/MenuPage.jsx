@@ -18,6 +18,55 @@ import MenuEditor from '../components/menu/MenuEditor';
 
 const DEFAULT_CATEGORY = 'All Items';
 
+const ORDER_STORAGE_KEY = 'capstone-active-order-id';
+
+const readStoredOrderId = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(ORDER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch (err) {
+    console.warn('Failed to read stored order id', err);
+    return null;
+  }
+};
+
+const persistOrderId = (id) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ORDER_STORAGE_KEY, String(id));
+  } catch (err) {
+    console.warn('Failed to persist order id', err);
+  }
+};
+
+const clearStoredOrderId = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(ORDER_STORAGE_KEY);
+  } catch (err) {
+    console.warn('Failed to clear stored order id', err);
+  }
+};
+
+const normalizeOrderItems = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => ({
+      id: entry.item_id ?? entry.id ?? null,
+      name: entry.name ?? '',
+      description: entry.description ?? '',
+      price: entry.price ?? 0,
+      img_link: entry.img_link ?? null,
+      quantity: entry.qty ?? entry.quantity ?? 1,
+      qty_left: entry.qty_left ?? null,
+    }))
+    .filter((entry) => Number.isInteger(entry.id) && entry.id > 0);
+};
+
 const resolveImageUrl = (imgLink) => {
   if (!imgLink) return null;
   if (imgLink.startsWith('http')) return imgLink;
@@ -83,6 +132,10 @@ const MenuPage = () => {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
+  const [orderId, setOrderId] = useState(null);
+  const [orderSaving, setOrderSaving] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [pendingOrderItemId, setPendingOrderItemId] = useState(null);
 
   const role = (profile?.role || '').toLowerCase();
   const isAdminManager = role === 'admin' || role === 'manager';
@@ -119,6 +172,53 @@ const MenuPage = () => {
       loadTypes();
     }
   }, [authLoading, isAuthenticated, loadItems, loadTypes]);
+
+  const loadStoredOrder = useCallback(async () => {
+    const storedId = readStoredOrderId();
+    if (!storedId) {
+      setOrderId(null);
+      setOrderItems([]);
+      return;
+    }
+
+    setOrderLoading(true);
+    try {
+      const res = await authFetch(`/api/orders/${storedId}`);
+      if (res?.status === 200 && res.data) {
+        setOrderId(storedId);
+        setOrderItems(normalizeOrderItems(res.data.items));
+      } else {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404 || status === 403) {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+      } else {
+        console.error('Failed to load stored order', err);
+      }
+    } finally {
+      setOrderLoading(false);
+    }
+  }, [authFetch]);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && !isAdminManager) {
+      loadStoredOrder();
+    }
+  }, [authLoading, isAuthenticated, isAdminManager, loadStoredOrder]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setOrderId(null);
+      setOrderItems([]);
+      clearStoredOrderId();
+    }
+  }, [isAuthenticated]);
 
   const categorySummaries = useMemo(() => {
     const categories = Array.from(new Set([
@@ -182,6 +282,18 @@ const MenuPage = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
 
+  const totalOrderQuantity = useMemo(() => {
+    return orderItems.reduce((acc, entry) => acc + (Number(entry.quantity) || 0), 0);
+  }, [orderItems]);
+
+  const orderSubtotal = useMemo(() => {
+    return orderItems.reduce((acc, entry) => {
+      const price = Number(entry.price) || 0;
+      const quantity = Number(entry.quantity) || 0;
+      return acc + price * quantity;
+    }, 0);
+  }, [orderItems]);
+
   const handleOpenEditor = (item) => {
     setEditingItem(item);
     setEditorOpen(true);
@@ -226,19 +338,75 @@ const MenuPage = () => {
     }
   };
 
-  const handleAddToOrder = (item) => {
+  const handleAddToOrder = async (item) => {
+    if (!isAuthenticated) {
+      toast.error('Please log in to add items to your order.');
+      return;
+    }
+
     if ((item.qty_left ?? 0) <= 0) {
       toast.info('This item is currently unavailable.');
       return;
     }
-    setOrderItems((prev) => {
-      if (prev.some((entry) => entry.id === item.id)) {
-        toast.info(`${item.name} is already in your order.`);
-        return prev;
+
+    const isCreatingOrder = !orderId;
+    setPendingOrderItemId(item.id);
+    setOrderSaving(true);
+
+    try {
+      const payload = { items: [{ item_id: item.id, qty: 1 }] };
+      let response;
+
+      if (isCreatingOrder) {
+        response = await authFetch('/api/orders', {
+          method: 'POST',
+          data: payload,
+        });
+      } else {
+        response = await authFetch(`/api/orders/${orderId}/items`, {
+          method: 'PATCH',
+          data: payload,
+        });
       }
-      toast.success(`${item.name} added to your order.`);
-      return [...prev, item];
-    });
+
+      const status = response?.status;
+      const data = response?.data;
+      if ((status === 200 || status === 201) && data) {
+        const returnedId = Number.parseInt(data.order_id, 10);
+        const effectiveOrderId = Number.isInteger(returnedId) && returnedId > 0 ? returnedId : orderId;
+        if (effectiveOrderId) {
+          setOrderId(effectiveOrderId);
+          persistOrderId(effectiveOrderId);
+        }
+
+        const normalized = normalizeOrderItems(data.items);
+        setOrderItems(normalized);
+
+        const updatedItem = normalized.find((entry) => entry.id === item.id);
+        if (updatedItem && typeof updatedItem.qty_left === 'number') {
+          setItems((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, qty_left: updatedItem.qty_left } : entry)));
+        }
+
+        toast.success(isCreatingOrder ? `${item.name} added to your order.` : `${item.name} updated in your order.`);
+      } else {
+        const message = data?.msg || 'Unable to update your order right now.';
+        throw new Error(message);
+      }
+    } catch (err) {
+      console.error('Failed to add item to order', err);
+      const status = err?.response?.status;
+      const message = err?.response?.data?.msg || err?.message || 'Unable to add item to your order right now.';
+      toast.error(message);
+
+      if ((status === 404 || status === 403) && orderId) {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+      }
+    } finally {
+      setOrderSaving(false);
+      setPendingOrderItemId(null);
+    }
   };
 
   if (authLoading) {
@@ -452,12 +620,47 @@ const MenuPage = () => {
             <p className="mt-1 text-[var(--app-muted)]">Choose your favorites and add them to your order.</p>
           </div>
         </div>
-        {orderItems.length > 0 && (
+        {orderLoading ? (
           <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.05)] px-4 py-2 text-xs font-medium text-[var(--app-muted)]">
-            <FiCheckCircle className="text-[var(--app-success)]" /> {orderItems.length} item{orderItems.length > 1 ? 's' : ''} added to your order
+            <FiClock /> Loading your active order…
           </div>
-        )}
+        ) : totalOrderQuantity > 0 ? (
+          <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.05)] px-4 py-2 text-xs font-medium text-[var(--app-muted)]">
+            <FiCheckCircle className="text-[var(--app-success)]" />
+            {orderSaving ? 'Updating your order…' : `${totalOrderQuantity} item${totalOrderQuantity > 1 ? 's' : ''} in your order`}
+          </div>
+        ) : null}
       </header>
+
+      {(orderLoading || totalOrderQuantity > 0) && (
+        <section className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">
+          {orderLoading ? (
+            <p className="text-sm text-[var(--app-muted)]">We&apos;re loading your active order…</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-[var(--app-text)]">Active Order</h2>
+                <span className="text-sm text-[var(--app-muted)]">{totalOrderQuantity} item{totalOrderQuantity > 1 ? 's' : ''}</span>
+              </div>
+              <ul className="space-y-3">
+                {orderItems.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between text-sm">
+                    <div>
+                      <p className="font-medium text-[var(--app-text)]">{entry.name}</p>
+                      <p className="text-xs text-[var(--app-muted)]">{formatPrice(entry.price)} each</p>
+                    </div>
+                    <span className="inline-flex min-w-[3rem] justify-end text-sm font-semibold text-[var(--app-text)]">×{entry.quantity}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between border-t border-[rgba(15,23,42,0.08)] pt-3 text-sm text-[var(--app-text)]">
+                <span className="font-semibold">Subtotal</span>
+                <span className="font-semibold">{formatPrice(orderSubtotal)}</span>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {groupedSections.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-[rgba(15,23,42,0.15)] bg-[var(--app-bg)] p-12 text-center text-sm text-[var(--app-muted)]">
@@ -476,7 +679,24 @@ const MenuPage = () => {
                 const imgSrc = resolveImageUrl(item.img_link);
                 const rating = computeRating(item);
                 const prepTime = computePrepTime(item);
-                const inOrder = orderItems.some((entry) => entry.id === item.id);
+                const existingEntry = orderItems.find((entry) => entry.id === item.id);
+                const currentQty = Number(existingEntry?.quantity) || 0;
+                const isUpdatingThisItem = orderSaving && pendingOrderItemId === item.id;
+                const buttonDisabled = !available || orderSaving;
+                const buttonText = isUpdatingThisItem
+                  ? 'Saving…'
+                  : existingEntry
+                    ? `Add another (currently ${currentQty})`
+                    : 'Add to Order';
+                const buttonClassName = [
+                  'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition',
+                  !available
+                    ? 'cursor-not-allowed bg-[rgba(15,23,42,0.05)] text-[var(--app-muted)]'
+                    : existingEntry
+                      ? 'bg-[rgba(15,23,42,0.08)] text-[var(--app-primary)] hover:bg-[rgba(15,23,42,0.12)]'
+                      : 'bg-[var(--app-primary)] text-[var(--app-primary-contrast)] hover:opacity-90',
+                  orderSaving ? 'opacity-75' : '',
+                ].join(' ');
 
                 return (
                   <article
@@ -517,17 +737,11 @@ const MenuPage = () => {
                         <button
                           type="button"
                           onClick={() => handleAddToOrder(item)}
-                          disabled={!available}
-                          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                            !available
-                              ? 'cursor-not-allowed bg-[rgba(15,23,42,0.05)] text-[var(--app-muted)]'
-                              : inOrder
-                                ? 'bg-[rgba(15,23,42,0.08)] text-[var(--app-primary)] hover:bg-[rgba(15,23,42,0.12)]'
-                                : 'bg-[var(--app-primary)] text-[var(--app-primary-contrast)] hover:opacity-90'
-                          }`}
+                          disabled={buttonDisabled}
+                          className={buttonClassName}
                         >
                           <FiPlus className="text-sm" />
-                          {inOrder ? 'Added' : 'Add to Order'}
+                          {buttonText}
                         </button>
                       </div>
                     </div>

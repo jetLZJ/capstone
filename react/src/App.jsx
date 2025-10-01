@@ -22,6 +22,7 @@ const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'));
 
 function App() {
   return (
@@ -36,7 +37,7 @@ function App() {
               
               {/* Protected Routes */}
               <Route path="/menu" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager','User']}>
                   <MenuPage />
                 </ProtectedRoute>
               } />
@@ -52,6 +53,7 @@ function App() {
               } />
               
               {/* Not Found Route */}
+              <Route path="/unauthorized" element={<UnauthorizedPage />} />
               <Route path="/404" element={<NotFoundPage />} />
               <Route path="*" element={<Navigate to="/404" />} />
             </Routes>

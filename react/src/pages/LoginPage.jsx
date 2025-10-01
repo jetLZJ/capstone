@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import AuthContainer from '../components/auth/AuthContainer';
 import useAuth from '../hooks/useAuth';
 import { toast } from 'react-toastify';
@@ -17,6 +17,12 @@ const LoginPage = () => {
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
+  const roleFromState = location.state?.role;
+  const qs = new URLSearchParams(location.search);
+  const roleParam = qs.get('role');
+  const role = (roleFromState || roleParam || 'User').toString();
+  const roleKey = role?.toLowerCase() || 'user';
+  const isUser = roleKey === 'user';
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -40,37 +46,27 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        <div className="px-6 py-8 bg-gradient-to-br from-white/60 to-primary-50/20 rounded-lg shadow-md">
-          <h1 className="text-4xl font-extrabold mb-3 text-primary-600">Welcome to Restaurant Manager</h1>
-          <p className="text-gray-700 dark:text-gray-300 mb-6">Manage your menu, shifts, and analytics in one place. Use the demo credentials below to quickly test different roles.</p>
-
-          <div className="space-y-3">
-            {demoUsers.map((u) => (
-              <div key={u.email} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded">
-                <div>
-                  <div className="text-sm font-semibold">{u.role}</div>
-                  <div className="text-xs text-gray-500">{u.email}</div>
-                </div>
-                <div>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => handleQuickLogin(u.email)}
-                  >
-                    Quick Login
-                  </button>
-                </div>
-              </div>
-            ))}
+    <div className="flex min-h-[80vh] px-4 py-12">
+      <div className="mx-auto w-full max-w-lg">
+        {isUser && (
+          <div className="mb-4 pl-5">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[var(--app-text)] hover:text-[var(--app-primary)] transition-colors"
+            >
+              <span aria-hidden="true">←</span>
+              <span>Back to Welcome</span>
+            </Link>
           </div>
-
-          <p className="mt-6 text-xs text-gray-500">Note: demo password is <strong>password</strong>. These accounts are for local testing only.</p>
-        </div>
-
-        <div className="px-4">
-          <AuthContainer onSuccess={handleAuthSuccess} />
-        </div>
+        )}
+        <AuthContainer
+          onSuccess={handleAuthSuccess}
+          role={roleKey}
+          title={isUser ? 'Customer Portal' : 'Staff Portal'}
+          subtitle={isUser ? 'Sign in to your account or create a new one' : 'Access restaurant management systems'}
+          demo={isUser ? { email: 'user1@example.com', password: 'password' } : demoUsers.filter((u) => u.role.toLowerCase() !== 'user')}
+          onQuickLogin={(email) => handleQuickLogin(email)}
+        />
       </div>
     </div>
   );

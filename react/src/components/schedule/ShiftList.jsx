@@ -26,10 +26,10 @@ export default function ShiftList({ onEdit }) {
       </div>
       <ul className="space-y-2">
         {shifts.map(s => (
-          <li key={s.id} className="p-3 bg-white dark:bg-gray-700 rounded shadow flex justify-between items-center">
-            <div>
-              <div className="font-medium">{s.name} <span className="text-sm text-gray-500">{s.start_time} - {s.end_time}</span></div>
-              <div className="text-sm text-gray-600 dark:text-gray-300">Role: {s.role_required}</div>
+            <li key={s.id} className="p-3 bg-[var(--app-surface)] rounded shadow flex justify-between items-center">
+              <div>
+                <div className="font-medium">{s.name} <span className="text-sm text-[var(--app-muted)]">{s.start_time} - {s.end_time}</span></div>
+                <div className="text-sm text-[var(--app-muted)]">Role: {s.role_required}</div>
             </div>
             <div>
               <button className="btn" onClick={() => onEdit(s)}>Edit</button>

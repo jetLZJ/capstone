@@ -24,9 +24,33 @@ export default defineConfig({
           // Rewrite any Location headers that point back to the proxyserver
           proxy.on('proxyRes', (proxyRes) => {
             const loc = proxyRes.headers && proxyRes.headers.location;
-            if (loc && loc.includes('://proxyserver')) {
-              // Replace hostname with relative path so the browser stays on localhost
-              proxyRes.headers.location = loc.replace(/https?:\/\/proxyserver(:\d+)?/i, '');
+            if (loc) {
+              // Debug: log original location header from backend so we can inspect
+              // whether the backend is returning absolute URLs containing `proxyserver`.
+              // This output appears in the Vite dev server logs.
+              try {
+                // eslint-disable-next-line no-console
+                console.log('[vite-proxy] original Location header:', loc);
+              } catch (e) {}
+
+              // Replace any occurrence of the proxyserver host (with or without scheme/port)
+              // so the browser does not receive an unresolved hostname. Examples handled:
+              //  - http://proxyserver:8080/path -> /path
+              //  - proxyserver/api/... -> /api/...
+              const newLoc = loc.replace(/(https?:\/\/)?proxyserver(:\d+)?/ig, '');
+              let finalLoc = newLoc;
+              // Ensure the location is an absolute path for the browser
+              if (finalLoc && !finalLoc.startsWith('/')) {
+                finalLoc = '/' + finalLoc.replace(/^\/+/, '');
+              }
+
+              // Debug: log rewritten location
+              try {
+                // eslint-disable-next-line no-console
+                console.log('[vite-proxy] rewritten Location header:', finalLoc);
+              } catch (e) {}
+
+              proxyRes.headers.location = finalLoc;
             }
           });
         }

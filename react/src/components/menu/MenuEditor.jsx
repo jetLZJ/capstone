@@ -62,7 +62,7 @@ export default function MenuEditor({ item, onSaved, onCancel }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+  <form onSubmit={handleSubmit} className="bg-[var(--app-surface)] p-4 rounded shadow">
       <div className="mb-2">
         <label className="block text-sm">Name</label>
         <input name="name" value={form.name} onChange={handleChange} className="w-full p-2 border rounded" />

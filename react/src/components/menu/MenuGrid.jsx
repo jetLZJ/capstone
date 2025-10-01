@@ -33,8 +33,8 @@ export default function MenuGrid({ items: itemsProp, onEdit, q, typeFilter }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {items.map(it => (
-        <div key={it.id} className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-          <div className="h-44 bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+        <div key={it.id} className="bg-[var(--app-surface)] rounded-lg shadow overflow-hidden">
+          <div className="h-44 bg-[var(--app-bg)] flex items-center justify-center overflow-hidden">
             {it.img_link ? (
               <img src={`/api/menu/uploads/${it.img_link?.split('/').pop()}`} alt={it.name} className="object-cover w-full h-full" />
             ) : (
@@ -43,12 +43,12 @@ export default function MenuGrid({ items: itemsProp, onEdit, q, typeFilter }) {
           </div>
           <div className="p-4">
             <div className="flex justify-between items-start">
-              <h3 className="font-semibold text-lg text-gray-900 dark:text-white">{it.name}</h3>
-              <div className="text-primary-600 font-bold">${it.price}</div>
+              <h3 className="font-semibold text-lg text-[var(--app-text)]">{it.name}</h3>
+              <div className="text-[var(--app-accent)] font-bold">${it.price}</div>
             </div>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{it.description}</p>
+            <p className="mt-2 text-sm text-[var(--app-muted)]">{it.description}</p>
             <div className="mt-4 flex justify-between items-center">
-              <div className="text-sm text-gray-500">Qty: {it.qty_left}</div>
+              <div className="text-sm text-[var(--app-muted)]">Qty: {it.qty_left}</div>
               <div className="flex gap-2">
                 <button className="btn btn-sm" onClick={() => onEdit(it)}>Edit</button>
               </div>

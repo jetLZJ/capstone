@@ -24,11 +24,11 @@ const Header = () => {
   };
   
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-md">
+    <header className="bg-[var(--app-surface)] shadow-md">
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center py-4">
           {/* Logo */}
-          <Link to="/" className="text-2xl font-bold text-primary-600 font-serif">
+          <Link to="/" className="text-2xl font-bold text-[var(--app-accent)] font-serif">
             RestaurantManager
           </Link>
           
@@ -36,16 +36,16 @@ const Header = () => {
           <nav className="hidden md:flex space-x-6 items-center">
             {isAuthenticated && (
               <>
-                <Link to="/" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                <Link to="/" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                   Home
                 </Link>
-                <Link to="/menu" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                <Link to="/menu" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                   Menu
                 </Link>
-                <Link to="/schedule" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                <Link to="/schedule" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                   Schedule
                 </Link>
-                <Link to="/analytics" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                <Link to="/analytics" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                   Analytics
                 </Link>
               </>
@@ -53,7 +53,7 @@ const Header = () => {
             
             <button 
               onClick={toggleDarkMode}
-              className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
+              className="text-[var(--app-text)] hover:text-[var(--app-accent)]"
               aria-label="Toggle dark mode"
             >
               {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
@@ -61,16 +61,16 @@ const Header = () => {
             
             {isAuthenticated ? (
               <div className="relative group">
-                <button className="flex items-center space-x-2 text-gray-700 hover:text-primary-600 dark:text-gray-300">
+                <button className="flex items-center space-x-2 text-[var(--app-text)] hover:text-[var(--app-accent)]">
                   <span>{profile?.first_name || 'User'}</span>
                 </button>
-                <div className="absolute right-0 w-48 mt-2 py-2 bg-white dark:bg-gray-800 rounded-md shadow-xl z-20 hidden group-hover:block">
-                  <Link to="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+                <div className="absolute right-0 w-48 mt-2 py-2 bg-[var(--app-surface)] rounded-md shadow-xl z-20 hidden group-hover:block">
+                  <Link to="/profile" className="block px-4 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-bg)]">
                     Profile
                   </Link>
                   <button 
                     onClick={logout}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                    className="block w-full text-left px-4 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-bg)]"
                   >
                     Logout
                   </button>
@@ -85,7 +85,7 @@ const Header = () => {
           
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-gray-700 dark:text-gray-300"
+            className="md:hidden text-[var(--app-text)]"
             onClick={toggleMenu}
             aria-label="Toggle menu"
           >
@@ -94,44 +94,44 @@ const Header = () => {
         </div>
         
         {/* Mobile Navigation */}
-        {isOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-700">
+          {isOpen && (
+          <div className="md:hidden py-4 border-t">
             <div className="flex flex-col space-y-4">
               {isAuthenticated ? (
                 <>
-                  <Link to="/" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                  <Link to="/" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                     Home
                   </Link>
-                  <Link to="/menu" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                  <Link to="/menu" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                     Menu
                   </Link>
-                  <Link to="/schedule" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                  <Link to="/schedule" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                     Schedule
                   </Link>
-                  <Link to="/analytics" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                  <Link to="/analytics" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                     Analytics
                   </Link>
-                  <hr className="border-gray-200 dark:border-gray-700" />
-                  <Link to="/profile" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
+                  <hr className="border-t" />
+                  <Link to="/profile" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
                     Profile
                   </Link>
                   <button 
                     onClick={logout}
-                    className="text-left text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
+                    className="text-left text-[var(--app-text)] hover:text-[var(--app-accent)]"
                   >
                     Logout
                   </button>
                 </>
               ) : (
-                <Link to="/login" className="text-primary-600">
+                <Link to="/login" className="text-[var(--app-accent)]">
                   Login / Register
                 </Link>
               )}
               
               <div className="flex items-center space-x-2">
-                <button 
+                <button
                   onClick={toggleDarkMode}
-                  className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
+                  className="text-[var(--app-text)] hover:text-[var(--app-accent)] dark:text-[var(--app-muted)] dark:hover:text-[var(--app-accent)]"
                   aria-label="Toggle dark mode"
                 >
                   {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}

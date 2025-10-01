@@ -13,7 +13,7 @@ const MainLayout = ({ children }) => {
   }, [location]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex flex-col bg-[var(--app-bg)]">
       {!isAuthPage && <Header />}
       
       <main className={`flex-grow ${!isAuthPage ? 'container mx-auto px-4 py-6' : ''}`}>
@@ -21,8 +21,8 @@ const MainLayout = ({ children }) => {
       </main>
       
       {!isAuthPage && (
-        <footer className="bg-white dark:bg-gray-800 shadow-inner py-4">
-          <div className="container mx-auto px-4 text-center text-gray-600 dark:text-gray-400">
+        <footer className="bg-[var(--app-surface)] shadow-inner py-4">
+          <div className="container mx-auto px-4 text-center text-[var(--app-muted)]">
             <p>&copy; {new Date().getFullYear()} Restaurant Management System</p>
           </div>
         </footer>

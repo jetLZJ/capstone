@@ -4,26 +4,34 @@ import * as Yup from 'yup';
 import useAuth from '../../hooks/useAuth';
 import { toast } from 'react-toastify';
 
-const LoginForm = ({ onSuccess }) => {
+const LoginForm = ({ onSuccess, role = 'user' }) => {
   const { login } = useAuth();
+  const roleKey = role?.toString().toLowerCase();
+  const isStaff = roleKey === 'staff' || roleKey === 'manager' || roleKey === 'admin';
   const [loading, setLoading] = useState(false);
 
   const formik = useFormik({
-    initialValues: {
-      email: '',
-      password: ''
-    },
-    validationSchema: Yup.object({
-      email: Yup.string()
-        .email('Invalid email address')
-        .required('Email is required'),
-      password: Yup.string()
-        .required('Password is required')
-    }),
+    initialValues: isStaff
+      ? { employee_id: '', password: '' }
+      : { email: '', password: '' },
+    validationSchema: Yup.object(
+      isStaff
+        ? {
+            employee_id: Yup.string().required('Employee ID is required'),
+            password: Yup.string().required('Password is required')
+          }
+        : {
+            email: Yup.string().email('Invalid email address').required('Email is required'),
+            password: Yup.string().required('Password is required')
+          }
+    ),
     onSubmit: async (values) => {
       setLoading(true);
       try {
-        await login(values);
+        const payload = isStaff
+          ? { employee_id: values.employee_id, password: values.password }
+          : { email: values.email, password: values.password };
+        await login(payload);
         toast.success('Login successful');
         if (onSuccess) onSuccess();
       } catch (error) {
@@ -39,28 +47,38 @@ const LoginForm = ({ onSuccess }) => {
     <div className="w-full max-w-md">
       <form onSubmit={formik.handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Email
+          <label htmlFor={isStaff ? 'employee_id' : 'email'} className="block text-sm font-medium text-[var(--app-text)]">
+            {isStaff ? 'Employee ID' : 'Email'}
           </label>
           <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            placeholder="Enter your email"
-            className={`mt-1 input ${formik.touched.email && formik.errors.email ? 'border-red-500' : ''}`}
+            id={isStaff ? 'employee_id' : 'email'}
+            name={isStaff ? 'employee_id' : 'email'}
+            type={isStaff ? 'text' : 'email'}
+            autoComplete={isStaff ? 'off' : 'email'}
+            placeholder={isStaff ? 'Enter your employee ID' : 'Enter your email'}
+            className={`mt-1 input ${
+              (isStaff ? (formik.touched.employee_id && formik.errors.employee_id) : (formik.touched.email && formik.errors.email))
+                ? 'border-red-500'
+                : ''
+            }`}
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
-            value={formik.values.email}
+            value={isStaff ? formik.values.employee_id : formik.values.email}
             disabled={loading}
           />
-          {formik.touched.email && formik.errors.email ? (
-            <p className="mt-1 text-sm text-red-600">{formik.errors.email}</p>
-          ) : null}
+          {isStaff ? (
+            formik.touched.employee_id && formik.errors.employee_id ? (
+              <p className="mt-1 text-sm text-red-600">{formik.errors.employee_id}</p>
+            ) : null
+          ) : (
+            formik.touched.email && formik.errors.email ? (
+              <p className="mt-1 text-sm text-red-600">{formik.errors.email}</p>
+            ) : null
+          )}
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="password" className="block text-sm font-medium text-[var(--app-text)]">
             Password
           </label>
           <input

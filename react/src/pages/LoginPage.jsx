@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import AuthContainer from '../components/auth/AuthContainer';
 import useAuth from '../hooks/useAuth';
 import { toast } from 'react-toastify';
@@ -17,7 +17,6 @@ const LoginPage = () => {
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
-  // role may be passed from homepage via location.state.role or query param ?role=User
   const roleFromState = location.state?.role;
   const qs = new URLSearchParams(location.search);
   const roleParam = qs.get('role');
@@ -47,14 +46,25 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
-      <div className="w-full max-w-lg">
+    <div className="flex min-h-[80vh] px-4 py-12">
+      <div className="mx-auto w-full max-w-lg">
+        {isUser && (
+          <div className="mb-4 pl-5">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[var(--app-text)] hover:text-[var(--app-primary)] transition-colors"
+            >
+              <span aria-hidden="true">←</span>
+              <span>Back to Welcome</span>
+            </Link>
+          </div>
+        )}
         <AuthContainer
           onSuccess={handleAuthSuccess}
           role={roleKey}
           title={isUser ? 'Customer Portal' : 'Staff Portal'}
           subtitle={isUser ? 'Sign in to your account or create a new one' : 'Access restaurant management systems'}
-          demo={isUser ? { email: 'user1@example.com', password: 'password' } : demoUsers.filter(u => u.role.toLowerCase() !== 'user')}
+          demo={isUser ? { email: 'user1@example.com', password: 'password' } : demoUsers.filter((u) => u.role.toLowerCase() !== 'user')}
           onQuickLogin={(email) => handleQuickLogin(email)}
         />
       </div>

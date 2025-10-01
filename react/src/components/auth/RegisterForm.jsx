@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import useAuth from '../../hooks/useAuth';
@@ -7,15 +7,19 @@ import { toast } from 'react-toastify';
 const RegisterForm = ({ onSuccess }) => {
   const { register } = useAuth();
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const formik = useFormik({
     initialValues: {
       first_name: '',
       last_name: '',
       email: '',
+      phone: '',
       password: '',
-      confirmPassword: ''
-      , avatar_preview: '', avatar_file: null
+      confirmPassword: '',
+      avatar_preview: '',
+      avatar_file: null,
+      marketing_opt_in: false,
     },
     validationSchema: Yup.object({
       first_name: Yup.string()
@@ -27,18 +31,22 @@ const RegisterForm = ({ onSuccess }) => {
       email: Yup.string()
         .email('Invalid email address')
         .required('Email is required'),
+      phone: Yup.string()
+        .required('Phone number is required')
+        .matches(/^[+]?[(]?[0-9]{1,4}[)]?[-\s0-9]*$/, 'Enter a valid phone number'),
       password: Yup.string()
         .min(6, 'Password must be at least 6 characters')
         .required('Password is required'),
       confirmPassword: Yup.string()
         .oneOf([Yup.ref('password'), null], 'Passwords must match')
-        .required('Confirm password is required')
+        .required('Confirm password is required'),
+      marketing_opt_in: Yup.boolean(),
     }),
     onSubmit: async (values) => {
       setLoading(true);
       try {
         // Remove confirmPassword field before sending to API
-        const { confirmPassword, avatar_preview, avatar_file, ...userData } = values;
+        const { confirmPassword, avatar_preview, avatar_file, marketing_opt_in, ...userData } = values;
         // If an avatar file was selected, upload it first and include returned URL
         if (avatar_file) {
           try {
@@ -54,6 +62,8 @@ const RegisterForm = ({ onSuccess }) => {
           // fallback: include base64 preview if file wasn't stored
           userData.avatar = avatar_preview;
         }
+
+        userData.marketing_opt_in = Boolean(marketing_opt_in);
 
         await register(userData);
         toast.success('Registration successful');
@@ -84,19 +94,39 @@ const RegisterForm = ({ onSuccess }) => {
       <form onSubmit={formik.handleSubmit} className="space-y-4">
         {/* Avatar upload */}
         <div className="flex flex-col items-center">
-          <div className="w-20 h-20 rounded-full bg-[var(--app-bg)] flex items-center justify-center mb-2 overflow-hidden">
-            {formik.values.avatar_preview ? (
-              <img src={formik.values.avatar_preview} alt="avatar preview" className="w-full h-full object-cover" />
-            ) : (
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[var(--app-muted)]">
-                <path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5 0-9 2.5-9 5v1h18v-1c0-2.5-4-5-9-5z" fill="currentColor"/>
+          <div className="relative mb-3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-28 h-28 rounded-full bg-[var(--app-bg)] border border-[rgba(15,23,42,0.08)] flex items-center justify-center overflow-hidden shadow-sm transition hover:border-[var(--app-primary)]"
+            >
+              {formik.values.avatar_preview ? (
+                <img src={formik.values.avatar_preview} alt="avatar preview" className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex flex-col items-center text-[var(--app-muted)]">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 5a3 3 0 110 6 3 3 0 010-6zm0 8c3.4 0 6 2 6 4v1H6v-1c0-2 2.6-4 6-4z" fill="currentColor" />
+                  </svg>
+                  <span className="text-xs mt-1">Add photo</span>
+                </div>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-[var(--app-primary)] text-[var(--app-primary-contrast)] flex items-center justify-center shadow-lg"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 5.5l3 3h-2v6h-2v-6H9l3-3z" fill="currentColor" />
+                <path d="M6 18h12v2H6v-2z" fill="currentColor" />
               </svg>
-            )}
+            </button>
           </div>
-          <label className="text-sm text-[var(--app-muted)] mb-3">Upload profile picture (optional)</label>
           <input
+            ref={fileInputRef}
             type="file"
             accept="image/*"
+            className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
@@ -110,6 +140,7 @@ const RegisterForm = ({ onSuccess }) => {
               }
             }}
           />
+          <p className="text-sm text-[var(--app-muted)]">Upload profile picture (optional)</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -171,6 +202,25 @@ const RegisterForm = ({ onSuccess }) => {
         </div>
 
         <div>
+          <label htmlFor="phone" className="block text-sm font-medium text-[var(--app-text)]">Phone Number</label>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            placeholder="+1 (555) 123-4567"
+            className={`mt-1 input ${formik.touched.phone && formik.errors.phone ? 'border-red-500' : ''}`}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            value={formik.values.phone}
+            disabled={loading}
+          />
+          {formik.touched.phone && formik.errors.phone ? (
+            <p className="mt-1 text-sm text-red-600">{formik.errors.phone}</p>
+          ) : null}
+        </div>
+
+        <div>
           <label htmlFor="password" className="block text-sm font-medium text-[var(--app-text)]">Password</label>
           <input
             id="password"
@@ -206,6 +256,22 @@ const RegisterForm = ({ onSuccess }) => {
           {formik.touched.confirmPassword && formik.errors.confirmPassword ? (
             <p className="mt-1 text-sm text-red-600">{formik.errors.confirmPassword}</p>
           ) : null}
+        </div>
+
+        <div className="flex items-start gap-3 pt-1">
+          <input
+            id="marketing_opt_in"
+            name="marketing_opt_in"
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border border-[rgba(15,23,42,0.2)] text-[var(--app-primary)] focus:ring-[var(--app-primary)]"
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            checked={formik.values.marketing_opt_in}
+            disabled={loading}
+          />
+          <label htmlFor="marketing_opt_in" className="text-sm text-[var(--app-text)]">
+            I would like to receive marketing emails about special offers and events
+          </label>
         </div>
 
         <div>

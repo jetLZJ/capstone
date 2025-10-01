@@ -2,7 +2,14 @@ import { useState } from 'react';
 import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
 
-const AuthContainer = ({ onSuccess, role = 'user', demo = null, onQuickLogin = null }) => {
+const AuthContainer = ({
+  onSuccess,
+  role = 'user',
+  demo = null,
+  onQuickLogin = null,
+  title,
+  subtitle,
+}) => {
   const [activeTab, setActiveTab] = useState('login');
   const roleKey = role?.toString().toLowerCase();
   const allowRegister = roleKey === 'user';
@@ -12,11 +19,12 @@ const AuthContainer = ({ onSuccess, role = 'user', demo = null, onQuickLogin = n
   };
 
   return (
-    <div className={`${allowRegister ? 'w-full max-w-md mx-auto px-4 py-8' : 'w-full max-w-sm mx-auto px-6 py-10 text-center'} bg-[var(--app-surface)] rounded-lg shadow-md`}>
+    <div className={`${allowRegister ? 'w-full max-w-md mx-auto px-5 py-7' : 'w-full max-w-sm mx-auto px-6 py-10 text-center'} bg-[var(--app-surface)] rounded-3xl shadow-lg border border-[rgba(15,23,42,0.05)]`}>
+
       {/* title/subtitle */}
       {typeof title !== 'undefined' && (
-        <div className="mb-3 text-center">
-          <h2 className="text-2xl font-semibold text-[var(--app-primary)]">{title}</h2>
+        <div className="mb-6">
+          <h2 className="text-3xl font-semibold text-[var(--app-text)]">{title}</h2>
           {typeof subtitle !== 'undefined' && <p className="text-[var(--app-muted)] mt-1">{subtitle}</p>}
         </div>
       )}
@@ -24,14 +32,14 @@ const AuthContainer = ({ onSuccess, role = 'user', demo = null, onQuickLogin = n
       <div className="flex mb-6 justify-center">
         <div className="inline-flex rounded-full bg-[var(--app-bg)] p-1">
           <button
-            className={`px-6 py-2 rounded-full font-medium ${activeTab === 'login' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)]'}`}
+            className={`px-6 py-2 rounded-full font-medium transition-colors ${activeTab === 'login' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)] hover:text-[var(--app-primary)]'}`}
             onClick={() => handleTabChange('login')}
           >
             Sign In
           </button>
           {allowRegister && (
             <button
-              className={`px-6 py-2 rounded-full font-medium ${activeTab === 'register' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)]'}`}
+              className={`px-6 py-2 rounded-full font-medium transition-colors ${activeTab === 'register' ? 'bg-white text-[var(--app-primary)] shadow-sm' : 'text-[var(--app-muted)] hover:text-[var(--app-primary)]'}`}
               onClick={() => handleTabChange('register')}
             >
               Register

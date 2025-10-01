@@ -1,11 +1,7 @@
 import { createContext, useReducer, useEffect, useCallback } from 'react';
 import AuthService from '../services/AuthService';
 import httpClient from '../utils/httpClient';
-import * as jwtDecodeModule from 'jwt-decode';
-// Some distributions of `jwt-decode` don't provide a default export when bundled
-// (Vite/Rollup can expose only named exports). Use a safe fallback so both ESM
-// and CJS consumers work:
-const jwtDecode = jwtDecodeModule?.default ?? jwtDecodeModule;
+import { jwtDecode } from 'jwt-decode';
 
 // Initial state
 const initialState = {

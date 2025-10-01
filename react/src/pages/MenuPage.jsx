@@ -111,6 +111,9 @@ const CustomerBrowseView = ({
   onDecrementItem,
   onSubmitOrder,
   onNavigateToOrders,
+  categories,
+  selectedCategory,
+  onCategorySelect,
 }) => {
   const showReviewButton = totalOrderQuantity > 0;
 
@@ -137,6 +140,28 @@ const CustomerBrowseView = ({
         </div>
         {orderStatusPill}
       </header>
+
+  {Array.isArray(categories) && categories.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => {
+            const isActive = category === selectedCategory;
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() => onCategorySelect?.(category)}
+                className={`rounded-full px-5 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? 'bg-[var(--app-primary)] text-[var(--app-primary-contrast)] shadow-sm'
+                    : 'border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] text-[var(--app-muted)] hover:text-[var(--app-primary)]'
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <ActiveOrderPanel
         loading={orderLoading}
@@ -398,6 +423,13 @@ const MenuPage = () => {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
+
+  const customerSections = useMemo(() => {
+    if (selectedCategory === DEFAULT_CATEGORY) {
+      return groupedSections;
+    }
+    return groupedSections.filter((section) => section.name === selectedCategory);
+  }, [groupedSections, selectedCategory]);
 
   const handleOpenEditor = (item) => {
     setEditingItem(item);
@@ -712,7 +744,7 @@ const MenuPage = () => {
       <div className="mx-auto w-full max-w-6xl space-y-10 px-4 sm:px-6 lg:px-8">
         <CustomerBrowseView
           orderStatusPill={orderStatusPill}
-          groupedSections={groupedSections}
+          groupedSections={customerSections}
           orderItems={orderItems}
           orderLoading={orderLoading}
           orderSaving={orderSaving}
@@ -725,6 +757,9 @@ const MenuPage = () => {
           onDecrementItem={handleDecrementOrderItem}
           onSubmitOrder={handleSubmitOrderWithRefresh}
           onNavigateToOrders={handleNavigateToOrders}
+          categories={tabOptions}
+          selectedCategory={selectedCategory}
+          onCategorySelect={setSelectedCategory}
         />
       </div>
     </div>

@@ -16,12 +16,13 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || '/';
   const roleFromState = location.state?.role;
   const qs = new URLSearchParams(location.search);
   const roleParam = qs.get('role');
   const role = (roleFromState || roleParam || 'User').toString();
   const roleKey = role?.toLowerCase() || 'user';
+  const defaultLanding = roleKey === 'user' ? '/menu' : '/';
+  const from = location.state?.from?.pathname || defaultLanding;
   const isUser = roleKey === 'user';
 
   useEffect(() => {

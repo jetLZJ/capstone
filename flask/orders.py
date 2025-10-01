@@ -216,6 +216,50 @@ def create_order():
     return inner()
 
 
+@bp.route('/', methods=['GET'])
+def list_orders():
+    jwt_required_fn = jwt_required
+    get_identity_fn = get_jwt_identity
+    if not jwt_required_fn or not get_identity_fn:
+        return jsonify({'msg': 'JWT extension not available'}), 501
+
+    @jwt_required_fn()
+    def inner():
+        user_id = get_identity_fn()
+        try:
+            user_id_int = int(user_id)
+        except (TypeError, ValueError):
+            user_id_int = user_id
+
+        try:
+            requested_limit = int(request.args.get('limit', 20))
+        except (TypeError, ValueError):
+            requested_limit = 20
+        if requested_limit <= 0:
+            requested_limit = 20
+        limit = min(requested_limit, 50)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT id FROM orders WHERE member_id=? ORDER BY order_timestamp DESC, id DESC LIMIT ?',
+            (user_id_int, limit),
+        )
+        rows = cur.fetchall() or []
+
+        orders = []
+        for row in rows:
+            order_id = row['id']
+            order_data = _build_order_response(conn, order_id)
+            if order_data.get('order_closed'):
+                order_data.setdefault('status', 'submitted')
+            orders.append(order_data)
+
+        return jsonify({'orders': orders, 'count': len(orders)})
+
+    return inner()
+
+
 @bp.route('/<int:order_id>/items', methods=['PATCH'])
 def add_items(order_id: int):
     jwt_required_fn = jwt_required

@@ -1,8 +1,12 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 
 const HomePage = () => {
   const { isAuthenticated, profile } = useAuth();
+
+  if (isAuthenticated && (profile?.role || '').toLowerCase() === 'user') {
+    return <Navigate to="/menu" replace />;
+  }
 
   return (
     <div className="container mx-auto px-4 py-12">

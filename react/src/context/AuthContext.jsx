@@ -192,6 +192,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateProfile = async (updates) => {
+    try {
+      const profile = await AuthService.updateProfile(updates);
+      if (profile) {
+        dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+      }
+      return profile;
+    } catch (error) {
+      const message = error?.response?.data?.msg || error?.message || 'Failed to update profile';
+      throw new Error(message);
+    }
+  };
+
   // authFetch: wrapper around http client so components can use a consistent API
   const authFetch = useCallback(async (url, options = {}) => {
     // httpClient follows axios signature: (url, config)
@@ -207,7 +220,8 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         refreshToken,
-        initializeAuth
+        initializeAuth,
+        updateProfile
       }}
     >
       {children}

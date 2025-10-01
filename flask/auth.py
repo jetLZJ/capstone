@@ -147,23 +147,72 @@ def logout():
     return inner()
 
 
-@bp.route('/me', methods=['GET'])
+@bp.route('/me', methods=['GET', 'PATCH'])
 def me():
     # Use local jwt_required/get_jwt_identity so import is optional
     try:
         from flask_jwt_extended import jwt_required, get_jwt_identity
     except Exception:
         return jsonify({'msg': 'JWT not available in environment'}), 501
+
+    def serialize_user(row):
+        return {
+            'id': row[0],
+            'first_name': row[1],
+            'last_name': row[2],
+            'email': row[3],
+            'role': row[4],
+            'phone_number': row[5],
+            'allow_marketing': bool(row[6]) if row[6] is not None else False,
+            'profile_pic': row[7],
+            'signup_date': row[8],
+        }
+
     @jwt_required()
     def inner():
         uid = get_jwt_identity()
         conn = get_db()
         cur = conn.cursor()
-        cur.execute('SELECT u.id, u.first_name, u.last_name, u.email, r.name FROM users u JOIN roles r ON u.role_id=r.id WHERE u.id=?', (uid,))
+
+        if request.method == 'PATCH':
+            data = request.get_json() or {}
+            allowed = {
+                'first_name': 'first_name',
+                'last_name': 'last_name',
+                'phone_number': 'phone_number',
+                'allow_marketing': 'allow_marketing',
+                'profile_pic': 'profile_pic',
+            }
+            updates = []
+            params = []
+            for payload_key, column in allowed.items():
+                if payload_key in data:
+                    value = data[payload_key]
+                    if payload_key == 'allow_marketing':
+                        value = 1 if value else 0
+                    updates.append(f"{column}=?")
+                    params.append(value)
+
+            if not updates:
+                return jsonify({'msg': 'No updates provided'}), 400
+
+            try:
+                cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", (*params, uid))
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                return jsonify({'msg': 'Failed to update profile', 'error': str(exc)}), 500
+
+        cur.execute(
+            'SELECT u.id, u.first_name, u.last_name, u.email, r.name, u.phone_number, u.allow_marketing, u.profile_pic, u.signup_date '
+            'FROM users u JOIN roles r ON u.role_id=r.id WHERE u.id=?',
+            (uid,),
+        )
         row = cur.fetchone()
         if not row:
             return jsonify({'msg': 'User not found'}), 404
-        return jsonify({'id': row[0], 'first_name': row[1], 'last_name': row[2], 'email': row[3], 'role': row[4]})
+        return jsonify(serialize_user(row))
+
     return inner()
 
 

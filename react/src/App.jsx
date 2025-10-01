@@ -18,6 +18,8 @@ import LoadingSpinner from './components/ui/LoadingSpinner';
 
 // Lazy-loaded components
 const MenuPage = lazy(() => import('./pages/MenuPage'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
@@ -41,6 +43,19 @@ function App() {
                   <MenuPage />
                 </ProtectedRoute>
               } />
+              <Route path="/orders" element={
+                <ProtectedRoute allowedRoles={['User']}>
+                  <OrdersPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/profile" element={
+                <ProtectedRoute allowedRoles={['User']}>
+                  <ProfilePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/menu/orders" element={<Navigate to="/orders" replace />} />
+              <Route path="/menu/profile" element={<Navigate to="/profile" replace />} />
+              <Route path="/menu/*" element={<Navigate to="/menu" replace />} />
               <Route path="/schedule" element={
                 <ProtectedRoute>
                   <SchedulePage />

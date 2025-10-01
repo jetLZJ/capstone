@@ -1,4 +1,3 @@
-import json
 import os
 import sqlite3
 import sys
@@ -50,12 +49,17 @@ def order_context(app, client):
             cur.execute('INSERT INTO roles (name) VALUES (?)', ('User',))
             user_role_id = cur.lastrowid
 
-        pw_hash = hash_password(password)
-        cur.execute(
-            'INSERT INTO users (first_name,last_name,email,role_id,password_hash) VALUES (?,?,?,?,?)',
-            ('Test', 'User', email, user_role_id, pw_hash),
-        )
-        user_id = cur.lastrowid
+        cur.execute('SELECT id FROM users WHERE email=?', (email,))
+        user_row = cur.fetchone()
+        if user_row:
+            user_id = user_row['id'] if isinstance(user_row, sqlite3.Row) else user_row[0]
+        else:
+            pw_hash = hash_password(password)
+            cur.execute(
+                'INSERT INTO users (first_name,last_name,email,role_id,password_hash) VALUES (?,?,?,?,?)',
+                ('Test', 'User', email, user_role_id, pw_hash),
+            )
+            user_id = cur.lastrowid
 
         cur.execute(
             'INSERT INTO menu_items (name, price, description, qty_left) VALUES (?,?,?,?)',
@@ -123,3 +127,82 @@ def test_create_and_update_order(app, client, order_context):
         cur.execute('SELECT qty_left FROM menu_items WHERE id=?', (item_id,))
         qty_after_patch = cur.fetchone()['qty_left']
         assert qty_after_patch == 2
+
+    # Decrement the item quantity by two using the granular endpoint
+    resp_decrement = client.patch(
+        f'/api/orders/{order_id}/items/{item_id}',
+        json={'operation': 'decrement', 'qty': 2},
+        headers=headers,
+    )
+    assert resp_decrement.status_code == 200
+    data_decrement = resp_decrement.get_json()
+    assert data_decrement['order_closed'] is False
+    decremented_entry = next((entry for entry in data_decrement['items'] if entry['item_id'] == item_id), None)
+    assert decremented_entry is not None
+    assert decremented_entry['qty'] == 1
+
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT qty_left FROM menu_items WHERE id=?', (item_id,))
+        qty_after_decrement = cur.fetchone()['qty_left']
+        assert qty_after_decrement == 4
+
+    # Remove the final quantity, which should close the order and restore stock
+    resp_remove = client.patch(
+        f'/api/orders/{order_id}/items/{item_id}',
+        json={'operation': 'decrement', 'qty': 1},
+        headers=headers,
+    )
+    assert resp_remove.status_code == 200
+    data_remove = resp_remove.get_json()
+    assert data_remove['order_closed'] is True
+    assert data_remove['items'] == []
+
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT qty_left FROM menu_items WHERE id=?', (item_id,))
+        qty_after_remove = cur.fetchone()['qty_left']
+        assert qty_after_remove == 5
+        cur.execute('SELECT 1 FROM orders WHERE id=?', (order_id,))
+        assert cur.fetchone() is None
+
+    # Start a fresh order to verify increment and submission flows
+    resp_new = client.post('/api/orders/', json={'items': [{'item_id': item_id, 'qty': 1}]}, headers=headers)
+    assert resp_new.status_code == 201
+    order_id_new = resp_new.get_json()['order_id']
+
+    resp_increment = client.patch(
+        f'/api/orders/{order_id_new}/items/{item_id}',
+        json={'operation': 'increment', 'qty': 1},
+        headers=headers,
+    )
+    assert resp_increment.status_code == 200
+    data_increment = resp_increment.get_json()
+    increment_entry = next((entry for entry in data_increment['items'] if entry['item_id'] == item_id), None)
+    assert increment_entry is not None
+    assert increment_entry['qty'] == 2
+
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT qty_left FROM menu_items WHERE id=?', (item_id,))
+        qty_after_increment = cur.fetchone()['qty_left']
+        assert qty_after_increment == 3
+
+    resp_submit = client.post(f'/api/orders/{order_id_new}/submit', headers=headers)
+    assert resp_submit.status_code == 200
+    data_submit = resp_submit.get_json()
+    assert data_submit['status'] == 'submitted'
+    assert data_submit['order_closed'] is True
+    submitted_entry = next((entry for entry in data_submit['items'] if entry['item_id'] == item_id), None)
+    assert submitted_entry is not None
+    assert submitted_entry['qty'] == 2
+
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT qty_left FROM menu_items WHERE id=?', (item_id,))
+        qty_after_submit = cur.fetchone()['qty_left']
+        assert qty_after_submit == 3

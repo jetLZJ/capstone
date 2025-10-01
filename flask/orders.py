@@ -110,7 +110,7 @@ def _merge_items(existing: List[Dict[str, int]], additions: List[Dict[str, int]]
     return [{'item_id': iid, 'qty': aggregated[iid]} for iid in order]
 
 
-def _build_order_response(conn, order_id: int) -> Dict:
+def _build_order_response(conn, order_id: int, *, order_closed: bool = False) -> Dict:
     items = _load_order_items(conn, order_id)
     inventory = _fetch_inventory_map(conn, [item['item_id'] for item in items])
     detailed = []
@@ -131,7 +131,20 @@ def _build_order_response(conn, order_id: int) -> Dict:
     cur.execute('SELECT order_timestamp FROM orders WHERE id=?', (order_id,))
     ts_row = cur.fetchone()
     order_ts = ts_row['order_timestamp'] if ts_row else None
-    return {'order_id': order_id, 'items': detailed, 'order_timestamp': order_ts}
+    return {
+        'order_id': order_id,
+        'items': detailed,
+        'order_timestamp': order_ts,
+        'order_closed': order_closed,
+    }
+
+
+def _write_order_items(conn, order_id: int, items: List[Dict[str, int]]) -> None:
+    cur = conn.cursor()
+    if items:
+        cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?, ?)', (order_id, json.dumps(items)))
+    else:
+        cur.execute('DELETE FROM order_items WHERE order_id=?', (order_id,))
 
 
 def _ensure_jwt():
@@ -254,7 +267,7 @@ def add_items(order_id: int):
 
         try:
             cur.execute('UPDATE orders SET order_timestamp=datetime("now") WHERE id=?', (order_id,))
-            cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?, ?)', (order_id, json.dumps(merged)))
+            _write_order_items(conn, order_id, merged)
             for item in additions:
                 stock = inventory[item['item_id']].get('qty_left')
                 if stock is not None:
@@ -267,6 +280,176 @@ def add_items(order_id: int):
             return jsonify({'msg': 'Failed to update order'}), 500
 
         response = _build_order_response(conn, order_id)
+        return jsonify(response), 200
+
+    return inner(order_id)
+
+
+@bp.route('/<int:order_id>/items/<int:item_id>', methods=['PATCH'])
+def update_item(order_id: int, item_id: int):
+    jwt_required_fn = jwt_required
+    get_identity_fn = get_jwt_identity
+    if not jwt_required_fn or not get_identity_fn:
+        return jsonify({'msg': 'JWT extension not available'}), 501
+
+    @jwt_required_fn()
+    def inner(order_id: int, item_id: int):
+        payload = request.get_json(silent=True) or {}
+        operation = (payload.get('operation') or 'set').lower()
+        if operation not in {'set', 'increment', 'decrement'}:
+            return jsonify({'msg': 'operation must be one of set, increment, decrement'}), 400
+
+        try:
+            qty_input = payload.get('qty', 1)
+            step = int(qty_input)
+        except (TypeError, ValueError):
+            return jsonify({'msg': 'qty must be an integer'}), 400
+
+        if operation in {'increment', 'decrement'} and step <= 0:
+            step = 1
+        if operation == 'set' and step < 0:
+            return jsonify({'msg': 'qty must be zero or positive for set operation'}), 400
+
+        user_id = get_identity_fn()
+        try:
+            user_id_int = int(user_id)
+        except (TypeError, ValueError):
+            user_id_int = user_id
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute('SELECT member_id FROM orders WHERE id=?', (order_id,))
+        owner_row = cur.fetchone()
+        if not owner_row:
+            return jsonify({'msg': 'Order not found'}), 404
+        if owner_row['member_id'] != user_id_int:
+            return jsonify({'msg': 'Forbidden'}), 403
+
+        existing = _load_order_items(conn, order_id)
+        current_qty = 0
+        for entry in existing:
+            if entry['item_id'] == item_id:
+                current_qty = entry['qty']
+                break
+
+        if operation == 'decrement' and current_qty == 0:
+            return jsonify({'msg': 'Item is not in the order'}), 409
+
+        if operation == 'increment':
+            delta = step
+            new_qty = current_qty + delta
+        elif operation == 'decrement':
+            if step > current_qty:
+                delta = -current_qty
+                new_qty = 0
+            else:
+                delta = -step
+                new_qty = current_qty + delta
+        else:  # set
+            delta = step - current_qty
+            new_qty = step
+
+        if new_qty < 0:
+            return jsonify({'msg': 'Resulting quantity cannot be negative'}), 400
+        if delta == 0:
+            response = _build_order_response(conn, order_id)
+            return jsonify(response), 200
+
+        inventory = _fetch_inventory_map(conn, [item_id])
+        info = inventory.get(item_id)
+        if not info:
+            return jsonify({'msg': 'Menu item not found'}), 404
+
+        stock_val = info.get('qty_left')
+        if delta > 0 and stock_val is not None:
+            try:
+                available = int(stock_val)
+            except (TypeError, ValueError):
+                available = 0
+            if available < delta:
+                return jsonify({'msg': f"Not enough stock for {info.get('name')}"}), 409
+
+        try:
+            updated_items: List[Dict[str, int]] = []
+            replaced = False
+            for entry in existing:
+                if entry['item_id'] == item_id:
+                    if new_qty > 0:
+                        updated_items.append({'item_id': item_id, 'qty': new_qty})
+                        replaced = True
+                else:
+                    updated_items.append(entry)
+            if not replaced and new_qty > 0:
+                updated_items.append({'item_id': item_id, 'qty': new_qty})
+
+            if stock_val is not None:
+                try:
+                    current_stock = int(stock_val)
+                except (TypeError, ValueError):
+                    current_stock = 0
+                new_stock = current_stock - delta
+                cur.execute('UPDATE menu_items SET qty_left=? WHERE id=?', (new_stock, item_id))
+
+            if updated_items:
+                _write_order_items(conn, order_id, updated_items)
+                cur.execute('UPDATE orders SET order_timestamp=datetime("now") WHERE id=?', (order_id,))
+                conn.commit()
+                response = _build_order_response(conn, order_id)
+                return jsonify(response), 200
+
+            _write_order_items(conn, order_id, [])
+            cur.execute('DELETE FROM orders WHERE id=?', (order_id,))
+            conn.commit()
+            response = _build_order_response(conn, order_id, order_closed=True)
+            return jsonify(response), 200
+        except Exception as exc:  # pragma: no cover - failure path
+            conn.rollback()
+            current_app.logger.exception('Failed to update order item %s on order %s: %s', item_id, order_id, exc)
+            return jsonify({'msg': 'Failed to update order item'}), 500
+
+    return inner(order_id, item_id)
+
+
+@bp.route('/<int:order_id>/submit', methods=['POST'])
+def submit_order(order_id: int):
+    jwt_required_fn = jwt_required
+    get_identity_fn = get_jwt_identity
+    if not jwt_required_fn or not get_identity_fn:
+        return jsonify({'msg': 'JWT extension not available'}), 501
+
+    @jwt_required_fn()
+    def inner(order_id: int):
+        user_id = get_identity_fn()
+        try:
+            user_id_int = int(user_id)
+        except (TypeError, ValueError):
+            user_id_int = user_id
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT member_id FROM orders WHERE id=?', (order_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'msg': 'Order not found'}), 404
+        if row['member_id'] != user_id_int:
+            return jsonify({'msg': 'Forbidden'}), 403
+
+        items = _load_order_items(conn, order_id)
+        if not items:
+            return jsonify({'msg': 'Cannot submit an empty order'}), 400
+
+        try:
+            cur.execute('UPDATE orders SET order_timestamp=datetime("now") WHERE id=?', (order_id,))
+            conn.commit()
+        except Exception as exc:  # pragma: no cover - failure path
+            conn.rollback()
+            current_app.logger.exception('Failed to submit order %s: %s', order_id, exc)
+            return jsonify({'msg': 'Failed to submit order'}), 500
+
+        response = _build_order_response(conn, order_id, order_closed=True)
+        response['status'] = 'submitted'
+        response['msg'] = 'Order submitted successfully'
         return jsonify(response), 200
 
     return inner(order_id)

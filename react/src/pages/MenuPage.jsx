@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   FiPlus,
+  FiMinus,
   FiSearch,
   FiPieChart,
   FiShoppingBag,
@@ -12,6 +13,7 @@ import {
   FiClock,
   FiTag,
   FiImage,
+  FiSend,
 } from 'react-icons/fi';
 import useAuth from '../hooks/useAuth';
 import MenuEditor from '../components/menu/MenuEditor';
@@ -135,6 +137,7 @@ const MenuPage = () => {
   const [orderId, setOrderId] = useState(null);
   const [orderSaving, setOrderSaving] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [pendingOrderItemId, setPendingOrderItemId] = useState(null);
 
   const role = (profile?.role || '').toLowerCase();
@@ -344,6 +347,11 @@ const MenuPage = () => {
       return;
     }
 
+    if (orderSubmitting) {
+      toast.info('Please wait while we finish submitting your current order.');
+      return;
+    }
+
     if ((item.qty_left ?? 0) <= 0) {
       toast.info('This item is currently unavailable.');
       return;
@@ -408,6 +416,134 @@ const MenuPage = () => {
       setPendingOrderItemId(null);
     }
   };
+
+  const handleUpdateOrderItem = useCallback(async (itemId, operation, qty = 1) => {
+    if (!orderId || orderSubmitting) return;
+    if (!isAuthenticated) {
+      toast.error('Please log in to manage your order.');
+      return;
+    }
+
+    const prevEntry = orderItems.find((entry) => entry.id === itemId);
+    const previousQty = Number(prevEntry?.quantity) || 0;
+    const itemName = prevEntry?.name || 'item';
+
+    setPendingOrderItemId(itemId);
+    setOrderSaving(true);
+
+    try {
+      const response = await authFetch(`/api/orders/${orderId}/items/${itemId}`, {
+        method: 'PATCH',
+        data: { operation, qty },
+      });
+      const status = response?.status;
+      const data = response?.data;
+      if (status === 200 && data) {
+        const normalized = normalizeOrderItems(data.items);
+        const updatedEntry = normalized.find((entry) => entry.id === itemId);
+        const newQty = Number(updatedEntry?.quantity) || 0;
+        const delta = newQty - previousQty;
+
+        const returnedId = Number.parseInt(data.order_id, 10);
+        if (!data.order_closed && Number.isInteger(returnedId) && returnedId > 0) {
+          setOrderId(returnedId);
+          persistOrderId(returnedId);
+        }
+
+        if (data.order_closed) {
+          clearStoredOrderId();
+          setOrderId(null);
+          setOrderItems([]);
+        } else {
+          setOrderItems(normalized);
+        }
+
+        setItems((prev) => prev.map((entry) => {
+          if (entry.id !== itemId) return entry;
+          if (updatedEntry && typeof updatedEntry.qty_left === 'number') {
+            return { ...entry, qty_left: updatedEntry.qty_left };
+          }
+          const currentStock = Number(entry.qty_left);
+          if (Number.isNaN(currentStock)) return entry;
+          const nextStock = currentStock - delta;
+          return { ...entry, qty_left: Math.max(0, nextStock) };
+        }));
+
+        if (data.order_closed) {
+          toast.info('Your order is now empty.');
+        } else if (delta > 0) {
+          toast.success(`Added another ${itemName}.`);
+        } else if (delta < 0) {
+          toast.success(`Removed one ${itemName}.`);
+        }
+      } else {
+        const message = data?.msg || 'Unable to update this item right now.';
+        throw new Error(message);
+      }
+    } catch (err) {
+      console.error('Failed to adjust order item', err);
+      const status = err?.response?.status;
+      const message = err?.response?.data?.msg || err?.message || 'Unable to update this item right now.';
+      toast.error(message);
+      if (status === 404 || status === 403) {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+      }
+    } finally {
+      setOrderSaving(false);
+      setPendingOrderItemId(null);
+    }
+  }, [authFetch, isAuthenticated, orderId, orderItems, orderSubmitting]);
+
+  const handleIncrementOrderItem = useCallback(
+    (itemId) => {
+      handleUpdateOrderItem(itemId, 'increment', 1);
+    },
+    [handleUpdateOrderItem],
+  );
+
+  const handleDecrementOrderItem = useCallback(
+    (itemId) => {
+      handleUpdateOrderItem(itemId, 'decrement', 1);
+    },
+    [handleUpdateOrderItem],
+  );
+
+  const handleSubmitOrder = useCallback(async () => {
+    if (!orderId || !orderItems.length) {
+      toast.info('Add at least one item before submitting your order.');
+      return;
+    }
+
+    setOrderSubmitting(true);
+    try {
+      const response = await authFetch(`/api/orders/${orderId}/submit`, { method: 'POST' });
+      const status = response?.status;
+      const data = response?.data;
+      if (status === 200 && data) {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+        toast.success('Order submitted! We\'ll start preparing it right away.');
+      } else {
+        const message = data?.msg || 'Unable to submit your order right now.';
+        throw new Error(message);
+      }
+    } catch (err) {
+      console.error('Failed to submit order', err);
+      const status = err?.response?.status;
+      const message = err?.response?.data?.msg || err?.message || 'Unable to submit your order right now.';
+      toast.error(message);
+      if (status === 404 || status === 403) {
+        clearStoredOrderId();
+        setOrderId(null);
+        setOrderItems([]);
+      }
+    } finally {
+      setOrderSubmitting(false);
+    }
+  }, [authFetch, orderId, orderItems.length]);
 
   if (authLoading) {
     return <LoadingState />;
@@ -627,7 +763,11 @@ const MenuPage = () => {
         ) : totalOrderQuantity > 0 ? (
           <div className="inline-flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.05)] px-4 py-2 text-xs font-medium text-[var(--app-muted)]">
             <FiCheckCircle className="text-[var(--app-success)]" />
-            {orderSaving ? 'Updating your order…' : `${totalOrderQuantity} item${totalOrderQuantity > 1 ? 's' : ''} in your order`}
+            {orderSubmitting
+              ? 'Submitting your order…'
+              : orderSaving
+                ? 'Updating your order…'
+                : `${totalOrderQuantity} item${totalOrderQuantity > 1 ? 's' : ''} in your order`}
           </div>
         ) : null}
       </header>
@@ -643,19 +783,67 @@ const MenuPage = () => {
                 <span className="text-sm text-[var(--app-muted)]">{totalOrderQuantity} item{totalOrderQuantity > 1 ? 's' : ''}</span>
               </div>
               <ul className="space-y-3">
-                {orderItems.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between text-sm">
-                    <div>
-                      <p className="font-medium text-[var(--app-text)]">{entry.name}</p>
-                      <p className="text-xs text-[var(--app-muted)]">{formatPrice(entry.price)} each</p>
-                    </div>
-                    <span className="inline-flex min-w-[3rem] justify-end text-sm font-semibold text-[var(--app-text)]">×{entry.quantity}</span>
-                  </li>
-                ))}
+                {orderItems.map((entry) => {
+                  const entryQty = Number(entry.quantity) || 0;
+                  const stockRemaining = typeof entry.qty_left === 'number' ? entry.qty_left : null;
+                  const isPending = orderSaving && pendingOrderItemId === entry.id;
+                  const disableDecrement = orderSaving || orderSubmitting || entryQty <= 0;
+                  const disableIncrement = orderSaving || orderSubmitting || (stockRemaining !== null && stockRemaining <= 0);
+
+                  return (
+                    <li
+                      key={entry.id}
+                      className="flex flex-col gap-2 rounded-2xl bg-[rgba(15,23,42,0.02)] p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-[var(--app-text)]">{entry.name}</p>
+                        <p className="text-xs text-[var(--app-muted)]">{formatPrice(entry.price)} each</p>
+                        {stockRemaining !== null ? (
+                          <p className="text-xs text-[var(--app-muted)]">
+                            {stockRemaining > 0 ? `${stockRemaining} left in stock` : 'No more available'}
+                          </p>
+                        ) : null}
+                        {isPending ? <p className="text-xs text-[var(--app-muted)]">Saving…</p> : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDecrementOrderItem(entry.id)}
+                          disabled={disableDecrement || entryQty <= 0}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] text-[var(--app-text)] transition disabled:cursor-not-allowed disabled:opacity-50 hover:border-[var(--app-primary)]"
+                          aria-label={`Remove one ${entry.name}`}
+                        >
+                          <FiMinus />
+                        </button>
+                        <span className="inline-flex w-8 justify-center text-sm font-semibold text-[var(--app-text)]">{entryQty}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleIncrementOrderItem(entry.id)}
+                          disabled={disableIncrement}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-primary)] text-[var(--app-primary-contrast)] transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90"
+                          aria-label={`Add one more ${entry.name}`}
+                        >
+                          <FiPlus />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
               <div className="flex items-center justify-between border-t border-[rgba(15,23,42,0.08)] pt-3 text-sm text-[var(--app-text)]">
                 <span className="font-semibold">Subtotal</span>
                 <span className="font-semibold">{formatPrice(orderSubtotal)}</span>
+              </div>
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSubmitOrder}
+                  disabled={orderSubmitting || orderSaving || orderItems.length === 0}
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--app-primary)] px-5 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] transition disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90"
+                >
+                  <FiSend className="text-sm" />
+                  {orderSubmitting ? 'Submitting…' : 'Submit Order'}
+                </button>
               </div>
             </div>
           )}
@@ -682,9 +870,11 @@ const MenuPage = () => {
                 const existingEntry = orderItems.find((entry) => entry.id === item.id);
                 const currentQty = Number(existingEntry?.quantity) || 0;
                 const isUpdatingThisItem = orderSaving && pendingOrderItemId === item.id;
-                const buttonDisabled = !available || orderSaving;
+                const buttonDisabled = !available || orderSaving || orderSubmitting;
                 const buttonText = isUpdatingThisItem
                   ? 'Saving…'
+                  : orderSubmitting
+                    ? 'Submitting…'
                   : existingEntry
                     ? `Add another (currently ${currentQty})`
                     : 'Add to Order';
@@ -694,8 +884,8 @@ const MenuPage = () => {
                     ? 'cursor-not-allowed bg-[rgba(15,23,42,0.05)] text-[var(--app-muted)]'
                     : existingEntry
                       ? 'bg-[rgba(15,23,42,0.08)] text-[var(--app-primary)] hover:bg-[rgba(15,23,42,0.12)]'
-                      : 'bg-[var(--app-primary)] text-[var(--app-primary-contrast)] hover:opacity-90',
-                  orderSaving ? 'opacity-75' : '',
+            : 'bg-[var(--app-primary)] text-[var(--app-primary-contrast)] hover:opacity-90',
+          orderSaving || orderSubmitting ? 'opacity-75' : '',
                 ].join(' ');
 
                 return (

@@ -102,16 +102,16 @@ def seed_menu_items(conn):
     cur.execute('SELECT id, name FROM types')
     types = [r[0] for r in cur.fetchall()]
     sample_items = [
-        ('Spring Rolls', 5.5, 'Crispy spring rolls', None, 10),
-        ('Beef Burger', 9.5, 'Grilled beef burger', None, 8),
-        ('Cheesecake', 6.0, 'Creamy cheesecake', None, 6),
-        ('Lemonade', 3.0, 'Fresh lemonade', None, 20),
-        ('Caesar Salad', 7.0, 'Fresh greens', None, 12),
-        ('Grilled Salmon', 14.5, 'Served with veggies', None, 5),
-        ('Chocolate Mousse', 5.5, 'Rich chocolate mousse', None, 7),
-        ('Iced Tea', 2.5, 'Brewed iced tea', None, 15),
-        ('Spaghetti', 10.0, 'Pasta with tomato sauce', None, 9),
-        ('Garlic Bread', 3.5, 'Toasted garlic bread', None, 11)
+        ('Spring Rolls', 5.5, 'Crispy spring rolls', 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80', 10),
+        ('Beef Burger', 9.5, 'Grilled beef burger', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=800&q=80', 8),
+        ('Cheesecake', 6.0, 'Creamy cheesecake', 'https://images.unsplash.com/photo-1505253758473-96b7015fcd40?auto=format&fit=crop&w=800&q=80', 6),
+        ('Lemonade', 3.0, 'Fresh lemonade', 'https://images.unsplash.com/photo-1558640472-9d2a7deb7f62?auto=format&fit=crop&w=800&q=80', 20),
+        ('Caesar Salad', 7.0, 'Fresh greens', 'https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80', 12),
+        ('Grilled Salmon', 14.5, 'Served with veggies', 'https://images.unsplash.com/photo-1514516345957-556ca7d90aaf?auto=format&fit=crop&w=800&q=80', 5),
+        ('Chocolate Mousse', 5.5, 'Rich chocolate mousse', 'https://images.unsplash.com/photo-1488900128323-21503983a07e?auto=format&fit=crop&w=800&q=80', 7),
+        ('Iced Tea', 2.5, 'Brewed iced tea', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 15),
+        ('Spaghetti', 10.0, 'Pasta with tomato sauce', 'https://images.unsplash.com/photo-1525755662778-989d0524087e?auto=format&fit=crop&w=800&q=80', 9),
+        ('Garlic Bread', 3.5, 'Toasted garlic bread', 'https://images.unsplash.com/photo-1604908178086-d1a112d7e1bd?auto=format&fit=crop&w=800&q=80', 11)
     ]
 
     # Insert only if name not present

@@ -71,10 +71,37 @@ const normalizeOrderItems = (items) => {
 
 const resolveImageUrl = (imgLink) => {
   if (!imgLink) return null;
-  if (imgLink.startsWith('http')) return imgLink;
-  if (imgLink.startsWith('static/')) return `/api/${imgLink}`;
-  const file = imgLink.split('/').pop();
-  return `/api/menu/uploads/${file}`;
+  const raw = String(imgLink).trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\\/g, '/');
+  if (/^blob:/i.test(normalized)) return normalized;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (normalized.startsWith('/api/menu/uploads/')) return normalized;
+  if (normalized.startsWith('/')) return normalized;
+  if (normalized.startsWith('api/')) return `/${normalized}`;
+
+  const toUploadPath = (value) => {
+    const safeValue = String(value).replace(/\\/g, '/');
+    const file = safeValue
+      .replace(/^static\/(uploads\/)?/i, '')
+      .replace(/^menu\/(uploads\/)?/i, '')
+      .replace(/^uploads\//i, '')
+      .replace(/^\/+/, '');
+    return file ? `/api/menu/uploads/${file}` : null;
+  };
+
+  if (/^(?:static\/uploads|menu\/uploads|uploads)\//i.test(normalized) ||
+      (!normalized.includes('/') && /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(normalized))) {
+    const uploadUrl = toUploadPath(normalized);
+    if (uploadUrl) return uploadUrl;
+  }
+
+  if (/^static\//i.test(normalized)) {
+    return `/api/${normalized.replace(/^\//, '')}`;
+  }
+
+  return `/api/${normalized.replace(/^\//, '')}`;
 };
 
 const getCategoryName = (item) => item?.type_name || 'Uncategorized';
@@ -952,8 +979,9 @@ const MenuPage = () => {
       </div>
 
       {editorOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-4 py-6">
-          <div className="relative w-full max-w-2xl">
+        <div className="fixed inset-0 z-40 overflow-y-auto bg-black/30">
+          <div className="flex min-h-full items-center justify-center px-4 py-10">
+            <div className="relative w-full max-w-2xl">
             <button
               type="button"
               onClick={handleEditorCancel}
@@ -962,7 +990,13 @@ const MenuPage = () => {
             >
               ×
             </button>
-            <MenuEditor item={editingItem} onSaved={handleEditorSaved} onCancel={handleEditorCancel} />
+            <MenuEditor
+              item={editingItem}
+              onSaved={handleEditorSaved}
+              onCancel={handleEditorCancel}
+              types={types}
+            />
+            </div>
           </div>
         </div>
       )}

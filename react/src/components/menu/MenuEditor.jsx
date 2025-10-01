@@ -75,9 +75,9 @@ export default function MenuEditor({ item, onSaved, onCancel }) {
         <label className="block text-sm">Description</label>
         <textarea name="description" value={form.description} onChange={handleChange} className="w-full p-2 border rounded"></textarea>
       </div>
-      {profile?.role === 'Manager' && (
+      {['Manager','Admin'].includes(profile?.role) && (
         <div className="mb-2">
-          <label className="block text-sm">Image (manager only)</label>
+          <label className="block text-sm">Image (manager &amp; admin only)</label>
           <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) setPreview(URL.createObjectURL(f)); }} className="w-full mt-1" />
           {preview && <div className="mt-2"><img src={preview} alt="preview" className="h-32 object-cover rounded" /></div>}
           {uploadProgress > 0 && <div className="mt-2 text-sm text-gray-600">Uploading: {uploadProgress}%</div>}

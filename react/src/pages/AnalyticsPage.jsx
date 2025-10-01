@@ -2,11 +2,12 @@ import AnalyticsSummary from '../components/analytics/AnalyticsSummary';
 
 const AnalyticsPage = () => {
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">Analytics Dashboard</h1>
-      <AnalyticsSummary />
+    <div className="min-h-full bg-[var(--app-bg)] py-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 sm:px-6 lg:px-8">
+        <AnalyticsSummary />
+      </div>
     </div>
-  )
-}
+  );
+};
 
 export default AnalyticsPage;

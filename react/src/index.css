@@ -18,6 +18,10 @@ body {
   --app-primary: #060614;
   --app-primary-contrast: #ffffff;
   --app-accent: #f97316;
+  --app-success: #22c55e;
+  --app-info: #0284c7;
+  --app-violet: #7c3aed;
+  --app-warning: #f97316;
 
   background-color: var(--app-bg);
   color: var(--app-text);
@@ -31,6 +35,10 @@ body {
   --app-primary: #060614;
   --app-primary-contrast: #ffffff;
   --app-accent: #f97316;
+  --app-success: #22c55e;
+  --app-info: #38bdf8;
+  --app-violet: #a855f7;
+  --app-warning: #fb923c;
 
   background-color: var(--app-bg);
   color: var(--app-text);

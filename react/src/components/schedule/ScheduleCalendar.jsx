@@ -20,8 +20,8 @@ const ShiftCard = ({ assignment, isManager, onEdit }) => {
       {...listeners}
       {...attributes}
       className={classNames(
-        'rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md',
-        isDragging ? 'ring-2 ring-blue-300 ring-offset-2' : ''
+  'rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
+  isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
     >
       <div className="flex items-start justify-between gap-3 p-3">
@@ -31,23 +31,23 @@ const ShiftCard = ({ assignment, isManager, onEdit }) => {
               <span className={classNames('h-2 w-2 rounded-full', meta.dot)} />
               {meta.label}
             </span>
-            {durationLabel && <span className="text-xs text-slate-400">{durationLabel}</span>}
+            {durationLabel && <span className="text-xs text-[var(--app-muted)]">{durationLabel}</span>}
           </div>
-          <div className="mt-2 text-sm font-semibold text-slate-900">{assignment.staff_name || 'Unassigned'}</div>
-          <div className="text-xs text-slate-500">{assignment.role || 'General'}</div>
+          <div className="mt-2 text-sm font-semibold text-[var(--app-text)]">{assignment.staff_name || 'Unassigned'}</div>
+          <div className="text-xs text-[var(--app-muted)]">{assignment.role || 'General'}</div>
         </div>
         <div className="text-right">
-          <div className="text-sm font-medium text-slate-700">{formatTimeRange(assignment.start, assignment.end)}</div>
-          <div className="text-xs text-slate-400">
+          <div className="text-sm font-medium text-[var(--app-text)]">{formatTimeRange(assignment.start, assignment.end)}</div>
+          <div className="text-xs text-[var(--app-muted)]">
             {Number.isNaN(start.getTime()) ? '' : start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
       </div>
       {assignment.notes ? (
-        <div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">{assignment.notes}</div>
+        <div className="border-t border-[rgba(15,23,42,0.08)] px-3 py-2 text-xs text-[var(--app-muted)]">{assignment.notes}</div>
       ) : null}
       {isManager ? (
-        <div className="border-t border-slate-100 px-3 py-2 text-xs text-blue-600 hover:text-blue-700">
+  <div className="border-t border-[rgba(15,23,42,0.08)] px-3 py-2 text-xs text-[var(--app-info)] transition hover:text-[color-mix(in_srgb,var(--app-info)_80%,_var(--app-text)_20%)]">
           <button type="button" onClick={() => onEdit(assignment)}>Edit shift</button>
         </div>
       ) : null}
@@ -63,23 +63,23 @@ const DayColumn = ({ day, assignments, isActive, onAdd, onEdit, isManager }) => 
     <div
       ref={setNodeRef}
       className={classNames(
-        'flex min-h-[14rem] flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition',
-        isOver ? 'ring-2 ring-blue-200' : '',
-        isActive ? 'border-blue-200 bg-blue-50' : ''
+  'flex min-h-[14rem] flex-col gap-3 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-4 shadow-sm transition',
+  isOver ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : '',
+  isActive ? 'border-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] bg-[color-mix(in_srgb,var(--app-info)_6%,_var(--app-surface)_94%)]' : ''
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-sm font-semibold text-slate-900">
+          <div className="text-sm font-semibold text-[var(--app-text)]">
             {dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
           </div>
-          <div className="text-xs text-slate-500">{assignments.length} shift{assignments.length === 1 ? '' : 's'}</div>
+          <div className="text-xs text-[var(--app-muted)]">{assignments.length} shift{assignments.length === 1 ? '' : 's'}</div>
         </div>
         {isManager ? (
           <button
             type="button"
             onClick={() => onAdd(day.date)}
-            className="rounded-full border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:border-blue-300 hover:text-blue-600"
+            className="rounded-full border border-dashed border-[rgba(15,23,42,0.2)] px-2 py-1 text-xs text-[var(--app-muted)] transition hover:border-[var(--app-info)] hover:text-[var(--app-info)]"
           >
             + Add
           </button>
@@ -87,7 +87,7 @@ const DayColumn = ({ day, assignments, isActive, onAdd, onEdit, isManager }) => 
       </div>
       <div className="flex flex-1 flex-col gap-3">
         {assignments.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-center text-xs text-slate-400">
+          <div className="rounded-xl border border-dashed border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)] p-3 text-center text-xs text-[var(--app-muted)]">
             No assignments yet
           </div>
         ) : (
@@ -179,8 +179,8 @@ export default function ScheduleCalendar({
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Week of {parseISOToDate(weekStart).toLocaleDateString()}</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <h2 className="text-2xl font-semibold text-[var(--app-text)]">Week of {parseISOToDate(weekStart).toLocaleDateString()}</h2>
+          <p className="text-sm text-[var(--app-muted)]">
             Through {addDays(parseISOToDate(weekStart), 6).toLocaleDateString()}
           </p>
         </div>
@@ -188,18 +188,18 @@ export default function ScheduleCalendar({
           <button
             type="button"
             onClick={() => onAddShift(weekStart)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500"
+            className="rounded-full bg-[var(--app-primary)] px-5 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
           >
             + New assignment
           </button>
         )}
       </div>
 
-  <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
           {loading
             ? Array.from({ length: 7 }).map((_, idx) => (
-                <div key={idx} className="h-52 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                <div key={idx} className="h-52 animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_85%,_var(--app-bg)_15%)]" />
               ))
             : dayAssignments.map((day) => (
                 <DayColumn
@@ -216,9 +216,9 @@ export default function ScheduleCalendar({
 
         <DragOverlay>
           {activeAssignment ? (
-            <div className="w-60 rounded-xl border border-blue-200 bg-white p-4 shadow-xl">
-              <div className="text-sm font-semibold text-slate-900">{activeAssignment.staff_name || 'Unassigned'}</div>
-              <div className="text-xs text-slate-500">{formatTimeRange(activeAssignment.start, activeAssignment.end)}</div>
+            <div className="w-60 rounded-xl border border-[rgba(15,23,42,0.1)] bg-[var(--app-surface)] p-4 shadow-xl">
+              <div className="text-sm font-semibold text-[var(--app-text)]">{activeAssignment.staff_name || 'Unassigned'}</div>
+              <div className="text-xs text-[var(--app-muted)]">{formatTimeRange(activeAssignment.start, activeAssignment.end)}</div>
             </div>
           ) : null}
         </DragOverlay>

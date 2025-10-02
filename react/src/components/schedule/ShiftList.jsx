@@ -2,8 +2,8 @@ import { statusOptions } from './scheduleHelpers';
 import StaffAvailabilityCard from './StaffAvailabilityCard';
 
 const metricCard = (title, value, accent) => (
-  <div className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <div className="text-sm font-semibold text-slate-500">{title}</div>
+  <div className="flex flex-col justify-between rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-5 shadow-sm transition">
+    <div className="text-sm font-semibold text-[var(--app-muted)]">{title}</div>
     <div className={`mt-2 text-3xl font-bold ${accent}`}>{value}</div>
   </div>
 );
@@ -11,16 +11,23 @@ const metricCard = (title, value, accent) => (
 function Notifications({ notifications, onDismiss }) {
   if (!notifications?.length) return null;
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-5 shadow-sm transition">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-700">Recent actions</h4>
-        <button type="button" onClick={onDismiss} className="text-xs text-slate-400 hover:text-slate-600">
+        <h4 className="text-sm font-semibold text-[var(--app-text)]">Recent actions</h4>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-[var(--app-muted)] transition hover:text-[var(--app-text)]"
+        >
           Clear
         </button>
       </div>
-      <ul className="mt-3 space-y-2 text-sm text-slate-600">
+  <ul className="mt-3 space-y-2 text-sm text-[color:color-mix(in_srgb,var(--app-text)_82%,_var(--app-bg)_18%)]">
         {notifications.map((item) => (
-          <li key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <li
+            key={item.id}
+            className="rounded-xl border border-[rgba(15,23,42,0.06)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)] px-3 py-2"
+          >
             {item.message}
           </li>
         ))}
@@ -53,17 +60,17 @@ export default function ScheduleSidebar({
   return (
     <aside className={`flex flex-col gap-6 ${className}`}>
       <div className="flex flex-col gap-4 md:flex-row">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:flex-1 md:basis-3/4">
+        <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition md:flex-1 md:basis-3/4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">This week</h3>
-              <p className="text-sm text-slate-500">Weekly staff assignment summary</p>
+              <h3 className="text-lg font-semibold text-[var(--app-text)]">This week</h3>
+              <p className="text-sm text-[var(--app-muted)]">Weekly staff assignment summary</p>
             </div>
             {isManager ? (
               <button
                 type="button"
                 onClick={onAddShift}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm hover:bg-slate-700"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--app-primary)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
               >
                 New Shift
               </button>
@@ -71,23 +78,24 @@ export default function ScheduleSidebar({
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {metricCard('Confirmed', coverage?.confirmed ?? 0, 'text-emerald-500')}
-            {metricCard('Scheduled', coverage?.scheduled ?? 0, 'text-blue-500')}
-            {metricCard('Pending', coverage?.pending ?? 0, 'text-amber-500')}
-            {metricCard('Open', coverage?.open ?? 0, 'text-rose-500')}
+            {metricCard('Confirmed', coverage?.confirmed ?? 0, 'text-[var(--app-success)]')}
+            {metricCard('Scheduled', coverage?.scheduled ?? 0, 'text-[var(--app-info)]')}
+            {metricCard('Pending', coverage?.pending ?? 0, 'text-[var(--app-warning)]')}
+            {metricCard('Open', coverage?.open ?? 0, 'text-[var(--app-violet)]')}
           </div>
-          <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-            Active staff this week: <span className="font-semibold text-slate-700">{coverage?.active_staff ?? 0}</span>
+          <div className="mt-4 rounded-xl bg-[color-mix(in_srgb,var(--app-surface)_90%,_var(--app-bg)_10%)] p-3 text-xs text-[var(--app-muted)]">
+            Active staff this week:{' '}
+            <span className="font-semibold text-[var(--app-text)]">{coverage?.active_staff ?? 0}</span>
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:basis-1/4 md:max-w-sm">
-          <h4 className="text-sm font-semibold text-slate-700">Filters</h4>
+        <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition md:basis-1/4 md:max-w-sm">
+          <h4 className="text-sm font-semibold text-[var(--app-text)]">Filters</h4>
           <div className="mt-3 space-y-3 text-sm">
-            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
               Staff member
               <select
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-300 focus:outline-none"
+                className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
                 value={filters.staffId || ''}
                 onChange={(e) => onFilterChange({ ...filters, staffId: e.target.value })}
               >
@@ -99,10 +107,10 @@ export default function ScheduleSidebar({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
               Shift status
               <select
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-300 focus:outline-none"
+                className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
                 value={filters.status || ''}
                 onChange={(e) => onFilterChange({ ...filters, status: e.target.value })}
               >
@@ -114,7 +122,7 @@ export default function ScheduleSidebar({
               </select>
             </label>
           </div>
-          <div className="mt-4 text-xs text-slate-400">
+          <div className="mt-4 text-xs text-[var(--app-muted)]">
             Filters adjust both the board and exported reports.
           </div>
         </div>

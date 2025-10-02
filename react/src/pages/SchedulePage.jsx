@@ -3,10 +3,23 @@ import ScheduleCalendar from '../components/schedule/ScheduleCalendar';
 import ScheduleSidebar from '../components/schedule/ShiftList';
 import ShiftEditor from '../components/schedule/ShiftEditor';
 import useAuth from '../hooks/useAuth';
-import { mergeNotifications, startOfWeek, toApiDate, toApiTime } from '../components/schedule/scheduleHelpers';
+import { mergeNotifications, startOfWeek, toApiDate, toApiTime, toDateInputValue } from '../components/schedule/scheduleHelpers';
 import { toast } from 'react-toastify';
 
 const initialFilters = { staffId: '', status: '' };
+
+const parseWeekString = (value) => {
+  if (!value) return startOfWeek(new Date());
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return startOfWeek(new Date());
+  }
+  return parsed;
+};
 
 const SchedulePage = () => {
   const { authFetch, profile } = useAuth();
@@ -28,6 +41,8 @@ const SchedulePage = () => {
   const isManager = normalizedRole === 'manager' || normalizedRole === 'admin';
   const isStaff = normalizedRole === 'staff' || normalizedRole === 'server';
   const activeWeekStart = data.week_start || weekStart;
+  const navButtonClass =
+    'rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] shadow-sm transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] hover:shadow-md dark:border-[rgba(255,255,255,0.08)]';
 
   const loadWeek = useCallback(async (ws) => {
     setLoading(true);
@@ -194,13 +209,16 @@ const SchedulePage = () => {
   }, [authFetch, refreshWeek]);
 
   const weekNav = useCallback((direction) => {
-    const current = startOfWeek(new Date(weekStart));
-    if (direction === 'prev') current.setDate(current.getDate() - 7);
-    else if (direction === 'next') current.setDate(current.getDate() + 7);
-    else current.setTime(startOfWeek(new Date()).getTime());
-    const iso = current.toISOString().slice(0, 10);
-    setWeekStart(iso);
-  }, [weekStart]);
+    const base = startOfWeek(parseWeekString(activeWeekStart || weekStart));
+    if (direction === 'prev') {
+      base.setDate(base.getDate() - 7);
+    } else if (direction === 'next') {
+      base.setDate(base.getDate() + 7);
+    } else {
+      base.setTime(startOfWeek(new Date()).getTime());
+    }
+    setWeekStart(toDateInputValue(base));
+  }, [activeWeekStart, weekStart]);
 
   const handleAvailabilitySave = useCallback(async (changes) => {
     if (!changes || !changes.length) return;
@@ -221,80 +239,70 @@ const SchedulePage = () => {
   }, [authFetch, loadAvailability, activeWeekStart]);
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Team schedule</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Coordinate staffing coverage, track confirmations, and resolve conflicts quickly.
-          </p>
+    <div className="min-h-full bg-[var(--app-bg)] py-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-[var(--app-text)]">Team schedule</h1>
+            <p className="text-sm text-[var(--app-muted)]">
+              Coordinate staffing coverage, track confirmations, and resolve conflicts quickly.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => weekNav('prev')} className={navButtonClass}>
+              ← Previous
+            </button>
+            <button type="button" onClick={() => weekNav('today')} className={navButtonClass}>
+              This week
+            </button>
+            <button type="button" onClick={() => weekNav('next')} className={navButtonClass}>
+              Next →
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => weekNav('prev')}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            ← Previous
-          </button>
-          <button
-            type="button"
-            onClick={() => weekNav('today')}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            This week
-          </button>
-          <button
-            type="button"
-            onClick={() => weekNav('next')}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Next →
-          </button>
+
+        <div className="flex flex-col gap-6">
+          <ScheduleSidebar
+            coverage={data.coverage}
+            onAddShift={() => openEditor('create', null, activeWeekStart)}
+            filters={filters}
+            onFilterChange={setFilters}
+            staff={staff}
+            role={role}
+            notifications={notifications}
+            onClearNotifications={() => setNotifications([])}
+            availabilityEntries={availabilityEntries}
+            weekStart={activeWeekStart}
+            onAvailabilitySave={handleAvailabilitySave}
+            availabilityLoading={availabilityLoading}
+            availabilitySaving={availabilitySaving}
+          />
+
+          <ScheduleCalendar
+            days={data.days}
+            weekStart={activeWeekStart}
+            loading={loading}
+            filters={filters}
+            role={role}
+            onAddShift={(date) => openEditor('create', null, date)}
+            onEditShift={(shift) => openEditor('edit', shift, shift.shift_date)}
+            onMoveShift={isManager ? handleMove : undefined}
+          />
+
+          <ShiftEditor
+            open={editorState.open}
+            mode={editorState.mode}
+            initialShift={editorState.shift}
+            defaultDate={editorState.defaultDate}
+            staffOptions={staff}
+            onSave={handleSave}
+            onDelete={handleDelete}
+            onClose={closeEditor}
+            weekStart={data.week_start || weekStart}
+            isSaving={isSaving}
+            error={editorError}
+          />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <ScheduleSidebar
-          coverage={data.coverage}
-          onAddShift={() => openEditor('create', null, weekStart)}
-          filters={filters}
-          onFilterChange={setFilters}
-          staff={staff}
-          role={role}
-          notifications={notifications}
-          onClearNotifications={() => setNotifications([])}
-          availabilityEntries={availabilityEntries}
-          weekStart={activeWeekStart}
-          onAvailabilitySave={handleAvailabilitySave}
-          availabilityLoading={availabilityLoading}
-          availabilitySaving={availabilitySaving}
-        />
-
-        <ScheduleCalendar
-          days={data.days}
-          weekStart={activeWeekStart}
-          loading={loading}
-          filters={filters}
-          role={role}
-          onAddShift={(date) => openEditor('create', null, date)}
-          onEditShift={(shift) => openEditor('edit', shift, shift.shift_date)}
-          onMoveShift={isManager ? handleMove : undefined}
-        />
-
-        <ShiftEditor
-          open={editorState.open}
-          mode={editorState.mode}
-          initialShift={editorState.shift}
-          defaultDate={editorState.defaultDate}
-          staffOptions={staff}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          onClose={closeEditor}
-          weekStart={data.week_start || weekStart}
-          isSaving={isSaving}
-          error={editorError}
-        />
       </div>
     </div>
   );

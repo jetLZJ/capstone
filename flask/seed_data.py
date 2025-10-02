@@ -276,92 +276,198 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
     ]
     user_map = _lookup_user_ids(conn, staff_emails)
 
-    week_start = _start_of_week()
-    # Remove any existing assignments for the target week so we can regenerate deterministic data.
-    cur.execute('DELETE FROM shift_assignments WHERE schedule_week_start=?', (week_start.isoformat(),))
-    print('Regenerating shift assignments for week starting', week_start)
+    current_week_start = _start_of_week()
+    previous_week_start = current_week_start - timedelta(weeks=1)
 
-    assignments: List[Dict[str, Any]] = [
+    # Remove any assignments within the two-week window so reseeding is deterministic even if
+    # older rows were missing schedule_week_start values.
+    window_start = previous_week_start
+    window_end = current_week_start + timedelta(days=6)
+    cur.execute(
+        'DELETE FROM shift_assignments WHERE shift_date BETWEEN ? AND ?',
+        (window_start.isoformat(), window_end.isoformat()),
+    )
+    cur.execute(
+        'DELETE FROM shift_assignments WHERE schedule_week_start IN (?, ?)',
+        (previous_week_start.isoformat(), current_week_start.isoformat()),
+    )
+    print('Regenerating shift assignments for weeks starting', previous_week_start, 'and', current_week_start)
+
+    weekly_templates: List[Dict[str, Any]] = [
         {
-            'shift': 'Morning Prep',
-            'staff_email': 'tina.staff@example.com',
-            'day_offset': 0,
-            'start_time': '07:00',
-            'end_time': '11:00',
-            'role': 'Kitchen',
-            'status': 'confirmed',
-            'notes': 'Prep soups and sauces',
+            'label': 'Previous week mix of statuses',
+            'week_start': previous_week_start,
+            'items': [
+                {
+                    'shift': 'Morning Prep',
+                    'staff_email': 'tina.staff@example.com',
+                    'day_offset': 0,
+                    'start_time': '07:00',
+                    'end_time': '11:00',
+                    'role': 'Kitchen',
+                    'status': 'confirmed',
+                    'notes': 'Prepped breakfast menu and cold stations',
+                },
+                {
+                    'shift': 'Lunch Service',
+                    'staff_email': 'sam.staff@example.com',
+                    'day_offset': 0,
+                    'start_time': '11:30',
+                    'end_time': '16:00',
+                    'role': 'Server',
+                    'status': 'scheduled',
+                    'notes': 'Handled patio and bar seating',
+                },
+                {
+                    'shift': 'Dinner Service',
+                    'staff_email': 'raj.staff@example.com',
+                    'day_offset': 2,
+                    'start_time': '16:00',
+                    'end_time': '22:00',
+                    'role': 'Server',
+                    'status': 'pending',
+                    'notes': 'Swap requested, awaiting confirmation',
+                },
+                {
+                    'shift': 'Lunch Service',
+                    'staff_email': None,
+                    'day_offset': 3,
+                    'start_time': '12:00',
+                    'end_time': '15:00',
+                    'role': 'Server',
+                    'status': 'open',
+                    'notes': 'Need extra set of hands for event group',
+                },
+                {
+                    'shift': 'Dinner Service',
+                    'staff_email': 'sam.staff@example.com',
+                    'day_offset': 5,
+                    'start_time': '17:00',
+                    'end_time': '22:00',
+                    'role': 'Server',
+                    'status': 'scheduled',
+                    'notes': 'Covering main dining room rotation',
+                },
+                {
+                    'shift': 'Closing Shift',
+                    'staff_email': 'maya.manager@example.com',
+                    'day_offset': 6,
+                    'start_time': '20:00',
+                    'end_time': '23:00',
+                    'role': 'Support',
+                    'status': 'confirmed',
+                    'notes': 'Weekly inventory sign-off and vendor notes',
+                },
+            ],
         },
         {
-            'shift': 'Lunch Service',
-            'staff_email': 'sam.staff@example.com',
-            'day_offset': 0,
-            'start_time': '11:00',
-            'end_time': '16:00',
-            'role': 'Server',
-            'status': 'scheduled',
-            'notes': 'Cover patio section',
-        },
-        {
-            'shift': 'Dinner Service',
-            'staff_email': 'raj.staff@example.com',
-            'day_offset': 2,
-            'start_time': '16:00',
-            'end_time': '22:00',
-            'role': 'Server',
-            'status': 'pending',
-            'notes': 'Awaiting confirmation',
-        },
-        {
-            'shift': 'Dinner Service',
-            'staff_email': None,
-            'day_offset': 4,
-            'start_time': '16:00',
-            'end_time': '22:00',
-            'role': 'Server',
-            'status': 'open',
-            'notes': 'Need volunteer for Saturday coverage',
-        },
-        {
-            'shift': 'Closing Shift',
-            'staff_email': 'maya.manager@example.com',
-            'day_offset': 5,
-            'start_time': '20:00',
-            'end_time': '23:00',
-            'role': 'Support',
-            'status': 'confirmed',
-            'notes': 'Inventory check after close',
+            'label': 'Current week coverage snapshot',
+            'week_start': current_week_start,
+            'items': [
+                {
+                    'shift': 'Morning Prep',
+                    'staff_email': 'tina.staff@example.com',
+                    'day_offset': 0,
+                    'start_time': '06:30',
+                    'end_time': '10:30',
+                    'role': 'Kitchen',
+                    'status': 'confirmed',
+                    'notes': 'Seasonal soups and pastry prep',
+                },
+                {
+                    'shift': 'Lunch Service',
+                    'staff_email': 'sam.staff@example.com',
+                    'day_offset': 1,
+                    'start_time': '11:00',
+                    'end_time': '15:30',
+                    'role': 'Server',
+                    'status': 'scheduled',
+                    'notes': 'Corporate luncheon coverage',
+                },
+                {
+                    'shift': 'Dinner Service',
+                    'staff_email': 'raj.staff@example.com',
+                    'day_offset': 2,
+                    'start_time': '16:00',
+                    'end_time': '22:00',
+                    'role': 'Server',
+                    'status': 'pending',
+                    'notes': 'Awaiting childcare confirmation',
+                },
+                {
+                    'shift': 'Lunch Service',
+                    'staff_email': None,
+                    'day_offset': 3,
+                    'start_time': '12:30',
+                    'end_time': '16:00',
+                    'role': 'Server',
+                    'status': 'open',
+                    'notes': 'Community tasting event support',
+                },
+                {
+                    'shift': 'Dinner Service',
+                    'staff_email': 'sam.staff@example.com',
+                    'day_offset': 4,
+                    'start_time': '17:00',
+                    'end_time': '22:00',
+                    'role': 'Server',
+                    'status': 'scheduled',
+                    'notes': 'High-volume reservation block',
+                },
+                {
+                    'shift': 'Morning Prep',
+                    'staff_email': 'tina.staff@example.com',
+                    'day_offset': 5,
+                    'start_time': '07:00',
+                    'end_time': '11:00',
+                    'role': 'Kitchen',
+                    'status': 'confirmed',
+                    'notes': 'Weekend brunch mise en place',
+                },
+                {
+                    'shift': 'Closing Shift',
+                    'staff_email': 'maya.manager@example.com',
+                    'day_offset': 6,
+                    'start_time': '20:00',
+                    'end_time': '23:00',
+                    'role': 'Support',
+                    'status': 'confirmed',
+                    'notes': 'Close-out audit and maintenance check',
+                },
+            ],
         },
     ]
 
     now_iso = datetime.utcnow().isoformat()
-    for item in assignments:
-        shift_id = shift_ids.get(item['shift'])
-        if not shift_id:
-            continue
-        shift_date = week_start + timedelta(days=item['day_offset'])
-        start_iso = _combine_iso(shift_date, item['start_time'])
-        end_iso = _combine_iso(shift_date, item['end_time'])
-        assigned_user = user_map.get(item['staff_email']) if item['staff_email'] else None
+    for template in weekly_templates:
+        for item in template['items']:
+            shift_id = shift_ids.get(item['shift'])
+            if not shift_id:
+                continue
 
-        cur.execute(
-            'INSERT INTO shift_assignments (shift_id, assigned_user, shift_date, start_time, end_time, role, status, notes, schedule_week_start, created_at, updated_at)\n'
-            'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-            (
-                shift_id,
-                assigned_user,
-                shift_date.isoformat(),
-                start_iso,
-                end_iso,
-                item['role'],
-                item['status'],
-                item['notes'],
-                week_start.isoformat(),
-                now_iso,
-                now_iso,
-            ),
-        )
-        print('Inserted shift assignment:', item['shift'], shift_date, '->', item['status'])
+            shift_date = template['week_start'] + timedelta(days=item['day_offset'])
+            start_iso = _combine_iso(shift_date, item['start_time'])
+            end_iso = _combine_iso(shift_date, item['end_time'])
+            assigned_user = user_map.get(item['staff_email']) if item['staff_email'] else None
+
+            cur.execute(
+                'INSERT INTO shift_assignments (shift_id, assigned_user, shift_date, start_time, end_time, role, status, notes, schedule_week_start, created_at, updated_at)\n'
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (
+                    shift_id,
+                    assigned_user,
+                    shift_date.isoformat(),
+                    start_iso,
+                    end_iso,
+                    item['role'],
+                    item['status'],
+                    item['notes'],
+                    template['week_start'].isoformat(),
+                    now_iso,
+                    now_iso,
+                ),
+            )
+            print('Inserted shift assignment:', template['label'], shift_date, '->', item['status'])
 
     conn.commit()
 

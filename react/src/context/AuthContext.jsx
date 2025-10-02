@@ -128,18 +128,36 @@ export const AuthProvider = ({ children }) => {
   }, [initializeAuth]);
 
   // Login function
-  const login = async (credentials) => {
+  const login = async (credentials, options = {}) => {
     dispatch({ type: ACTIONS.AUTH_START });
+    const portal = options.portal === 'staff' ? 'staff' : 'customer';
     try {
       const userData = await AuthService.login(credentials);
-      dispatch({ type: ACTIONS.AUTH_SUCCESS, payload: userData });
-      
-      // Load user profile
-      const profile = await AuthService.getCurrentUser();
-      if (profile) {
-        dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+
+      let profile;
+      try {
+        profile = await AuthService.getCurrentUser();
+      } catch (profileError) {
+        localStorage.removeItem('user');
+        throw new Error('Unable to verify your profile. Please try again.');
       }
-      
+
+      const role = (profile?.role || '').toLowerCase();
+      const isStaffRole = ['admin', 'manager', 'staff'].includes(role);
+      const isCustomerRole = role === 'user';
+
+      const allowed = portal === 'staff' ? isStaffRole : isCustomerRole;
+      if (!allowed) {
+        localStorage.removeItem('user');
+        const message = portal === 'staff'
+          ? 'Customer accounts must sign in through the customer portal.'
+          : 'Please use the staff portal to sign in with this account.';
+        throw new Error(message);
+      }
+
+      dispatch({ type: ACTIONS.AUTH_SUCCESS, payload: userData });
+      dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+
       return userData;
     } catch (error) {
       dispatch({ type: ACTIONS.AUTH_ERROR, payload: error.message || 'Login failed' });

@@ -18,8 +18,10 @@ const Header = () => {
   };
 
   const handleLogout = async () => {
+    setIsProfileDropdownOpen(false);
+    setIsMenuOpen(false);
     await logout();
-    navigate('/login');
+    navigate('/');
   };
 
   return (

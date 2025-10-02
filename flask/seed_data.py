@@ -6,14 +6,24 @@ dummy users and menu items requested by the user.
 
 Run: python flask/seed_data.py
 """
+import json
 import os
-import sqlite3
-from datetime import datetime
 import random
-from typing import Optional, List, Dict
+import sqlite3
+from datetime import datetime, timedelta, date
+from typing import Optional, List, Dict, Any
 
 ROOT = os.path.dirname(__file__)
 DB = os.environ.get('DB_PATH', os.path.join(ROOT, 'data', 'app.db'))
+
+
+def _column_exists(cur: sqlite3.Cursor, table: str, column: str) -> bool:
+    cur.execute(f"PRAGMA table_info({table})")
+    return any(row[1] == column for row in cur.fetchall())
+
+
+def _add_column(cur: sqlite3.Cursor, table: str, column_def: str) -> None:
+    cur.execute(f'ALTER TABLE {table} ADD COLUMN {column_def}')
 
 def ensure_title_column(conn):
     cur = conn.cursor()
@@ -61,6 +71,67 @@ def ensure_roles(conn):
         cur.execute('INSERT OR IGNORE INTO roles (name) VALUES (?)', (r,))
     conn.commit()
 
+
+def ensure_shift_schema(conn: sqlite3.Connection) -> None:
+    """Ensure the scheduling tables include the latest columns and indexes."""
+    cur = conn.cursor()
+
+    if not _column_exists(cur, 'shifts', 'recurrence_rule'):
+        _add_column(cur, 'shifts', 'recurrence_rule TEXT')
+    if not _column_exists(cur, 'shifts', 'default_status'):
+        _add_column(cur, 'shifts', "default_status TEXT DEFAULT 'scheduled'")
+    if not _column_exists(cur, 'shifts', 'default_duration'):
+        _add_column(cur, 'shifts', 'default_duration INTEGER')
+
+    assignment_columns = {
+        'start_time': 'start_time TEXT',
+        'end_time': 'end_time TEXT',
+        'status': "status TEXT DEFAULT 'scheduled'",
+        'notes': 'notes TEXT',
+        'recurrence_parent_id': 'recurrence_parent_id INTEGER',
+        'schedule_week_start': 'schedule_week_start DATE',
+        'created_at': 'created_at DATETIME',
+        'updated_at': 'updated_at DATETIME',
+    }
+
+    added_columns: Dict[str, bool] = {}
+    for column, definition in assignment_columns.items():
+        if not _column_exists(cur, 'shift_assignments', column):
+            _add_column(cur, 'shift_assignments', definition)
+            added_columns[column] = True
+
+    if added_columns.get('created_at'):
+        cur.execute("UPDATE shift_assignments SET created_at = datetime('now') WHERE created_at IS NULL")
+    if added_columns.get('status'):
+        cur.execute("UPDATE shift_assignments SET status = 'scheduled' WHERE status IS NULL OR status = ''")
+
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_shift_assignments_user_date ON shift_assignments (assigned_user, shift_date)')
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_shift_assignments_week ON shift_assignments (schedule_week_start)')
+    cur.execute(
+        'CREATE TABLE IF NOT EXISTS staff_availability ('
+        'id INTEGER PRIMARY KEY,'
+        'user_id INTEGER NOT NULL,'
+        'availability_date DATE NOT NULL,'
+        'is_available INTEGER NOT NULL DEFAULT 1,'
+        'notes TEXT,'
+        'updated_by INTEGER,'
+    'created_at DATETIME DEFAULT CURRENT_TIMESTAMP,'
+        'updated_at DATETIME,'
+        'FOREIGN KEY (user_id) REFERENCES users(id),'
+        'FOREIGN KEY (updated_by) REFERENCES users(id),'
+        'UNIQUE(user_id, availability_date)'
+        ')'
+    )
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_staff_availability_week ON staff_availability (availability_date)')
+    conn.commit()
+
+
+def cleanup_legacy_schedule_data(conn: sqlite3.Connection) -> None:
+    """Remove legacy schedule rows that are incompatible with the new schema."""
+    cur = conn.cursor()
+    cur.execute("DELETE FROM shift_assignments WHERE start_time IS NULL OR start_time = '' OR end_time IS NULL OR end_time = ''")
+    conn.commit()
+
 def seed_users(conn):
     cur = conn.cursor()
     # Determine role ids
@@ -94,6 +165,238 @@ def seed_users(conn):
             u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow(), pw_hash
         ))
         print('Inserted user:', u['email'])
+    conn.commit()
+
+
+def _lookup_user_ids(conn: sqlite3.Connection, emails: List[str]) -> Dict[str, Optional[int]]:
+    if not emails:
+        return {}
+    cur = conn.cursor()
+    placeholders = ','.join('?' for _ in emails)
+    cur.execute(f'SELECT email, id FROM users WHERE email IN ({placeholders})', tuple(emails))
+    rows = cur.fetchall()
+    mapping: Dict[str, Optional[int]] = {email: None for email in emails}
+    for email, uid in rows:
+        mapping[email] = uid
+    return mapping
+
+
+def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
+    """Seed reusable shift templates and return a name-to-id mapping."""
+    ensure_shift_schema(conn)
+    cur = conn.cursor()
+
+    admin_email = 'alice.admin@example.com'
+    admin_id = _lookup_user_ids(conn, [admin_email]).get(admin_email)
+
+    templates: List[Dict[str, Any]] = [
+        {
+            'name': 'Morning Prep',
+            'role_required': 'Kitchen',
+            'start_time': '07:00',
+            'end_time': '11:00',
+            'default_duration': 240,
+            'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        },
+        {
+            'name': 'Lunch Service',
+            'role_required': 'Server',
+            'start_time': '11:00',
+            'end_time': '16:00',
+            'default_duration': 300,
+            'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        },
+        {
+            'name': 'Dinner Service',
+            'role_required': 'Server',
+            'start_time': '16:00',
+            'end_time': '22:00',
+            'default_duration': 360,
+            'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA',
+        },
+        {
+            'name': 'Closing Shift',
+            'role_required': 'Support',
+            'start_time': '20:00',
+            'end_time': '23:00',
+            'default_duration': 180,
+            'recurrence_rule': 'FREQ=WEEKLY;BYDAY=FR,SA',
+        },
+    ]
+
+    name_to_id: Dict[str, int] = {}
+    for template in templates:
+        cur.execute('SELECT id FROM shifts WHERE name=?', (template['name'],))
+        row = cur.fetchone()
+        if row:
+            name_to_id[template['name']] = row[0]
+            continue
+        cur.execute(
+            'INSERT INTO shifts (name, role_required, start_time, end_time, created_by, recurrence_rule, default_status, default_duration)\n'
+            'VALUES (?,?,?,?,?,?,?,?)',
+            (
+                template['name'],
+                template['role_required'],
+                template['start_time'],
+                template['end_time'],
+                admin_id,
+                template['recurrence_rule'],
+                'scheduled',
+                template['default_duration'],
+            ),
+        )
+        last_id = cur.lastrowid
+        if last_id is None:
+            raise RuntimeError('Failed to insert shift template')
+        name_to_id[template['name']] = int(last_id)
+        print('Inserted shift template:', template['name'])
+
+    conn.commit()
+    return name_to_id
+
+
+def _start_of_week(target: Optional[date] = None) -> date:
+    ref = target or datetime.utcnow().date()
+    return ref - timedelta(days=ref.weekday())
+
+
+def _combine_iso(day: date, time_str: str) -> str:
+    return f"{day.isoformat()}T{time_str}:00"
+
+
+def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) -> None:
+    ensure_shift_schema(conn)
+    cur = conn.cursor()
+
+    staff_emails = [
+        'maya.manager@example.com',
+        'sam.staff@example.com',
+        'tina.staff@example.com',
+        'raj.staff@example.com',
+    ]
+    user_map = _lookup_user_ids(conn, staff_emails)
+
+    week_start = _start_of_week()
+    # Remove any existing assignments for the target week so we can regenerate deterministic data.
+    cur.execute('DELETE FROM shift_assignments WHERE schedule_week_start=?', (week_start.isoformat(),))
+    print('Regenerating shift assignments for week starting', week_start)
+
+    assignments: List[Dict[str, Any]] = [
+        {
+            'shift': 'Morning Prep',
+            'staff_email': 'tina.staff@example.com',
+            'day_offset': 0,
+            'start_time': '07:00',
+            'end_time': '11:00',
+            'role': 'Kitchen',
+            'status': 'confirmed',
+            'notes': 'Prep soups and sauces',
+        },
+        {
+            'shift': 'Lunch Service',
+            'staff_email': 'sam.staff@example.com',
+            'day_offset': 0,
+            'start_time': '11:00',
+            'end_time': '16:00',
+            'role': 'Server',
+            'status': 'scheduled',
+            'notes': 'Cover patio section',
+        },
+        {
+            'shift': 'Dinner Service',
+            'staff_email': 'raj.staff@example.com',
+            'day_offset': 2,
+            'start_time': '16:00',
+            'end_time': '22:00',
+            'role': 'Server',
+            'status': 'pending',
+            'notes': 'Awaiting confirmation',
+        },
+        {
+            'shift': 'Dinner Service',
+            'staff_email': None,
+            'day_offset': 4,
+            'start_time': '16:00',
+            'end_time': '22:00',
+            'role': 'Server',
+            'status': 'open',
+            'notes': 'Need volunteer for Saturday coverage',
+        },
+        {
+            'shift': 'Closing Shift',
+            'staff_email': 'maya.manager@example.com',
+            'day_offset': 5,
+            'start_time': '20:00',
+            'end_time': '23:00',
+            'role': 'Support',
+            'status': 'confirmed',
+            'notes': 'Inventory check after close',
+        },
+    ]
+
+    now_iso = datetime.utcnow().isoformat()
+    for item in assignments:
+        shift_id = shift_ids.get(item['shift'])
+        if not shift_id:
+            continue
+        shift_date = week_start + timedelta(days=item['day_offset'])
+        start_iso = _combine_iso(shift_date, item['start_time'])
+        end_iso = _combine_iso(shift_date, item['end_time'])
+        assigned_user = user_map.get(item['staff_email']) if item['staff_email'] else None
+
+        cur.execute(
+            'INSERT INTO shift_assignments (shift_id, assigned_user, shift_date, start_time, end_time, role, status, notes, schedule_week_start, created_at, updated_at)\n'
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            (
+                shift_id,
+                assigned_user,
+                shift_date.isoformat(),
+                start_iso,
+                end_iso,
+                item['role'],
+                item['status'],
+                item['notes'],
+                week_start.isoformat(),
+                now_iso,
+                now_iso,
+            ),
+        )
+        print('Inserted shift assignment:', item['shift'], shift_date, '->', item['status'])
+
+    conn.commit()
+
+
+def seed_staff_availability(conn: sqlite3.Connection) -> None:
+    ensure_shift_schema(conn)
+    cur = conn.cursor()
+
+    week_start = _start_of_week()
+    week_end = week_start + timedelta(days=6)
+    cur.execute('DELETE FROM staff_availability WHERE availability_date BETWEEN ? AND ?', (week_start.isoformat(), week_end.isoformat()))
+
+    staff_patterns = {
+        'sam.staff@example.com': {0: True, 1: True, 2: False, 4: True},
+        'tina.staff@example.com': {0: True, 2: True, 3: True},
+        'raj.staff@example.com': {1: False, 2: True, 5: True},
+    }
+
+    updater_id = _lookup_user_ids(conn, ['maya.manager@example.com']).get('maya.manager@example.com')
+    staff_ids = _lookup_user_ids(conn, list(staff_patterns.keys()))
+    now_iso = datetime.utcnow().isoformat()
+
+    for email, pattern in staff_patterns.items():
+        user_id = staff_ids.get(email)
+        if not user_id:
+            continue
+        for offset, available in pattern.items():
+            day = week_start + timedelta(days=offset)
+            notes = 'Available for shift' if available else 'Requesting time off'
+            cur.execute(
+                'INSERT OR REPLACE INTO staff_availability (user_id, availability_date, is_available, notes, updated_by, updated_at) '
+                'VALUES (?,?,?,?,?,?)',
+                (user_id, day.isoformat(), 1 if available else 0, notes, updater_id, now_iso),
+            )
+
     conn.commit()
 
 def seed_menu_items(conn):
@@ -144,10 +447,6 @@ def seed_orders(conn):
         print('No users or menu items to create orders')
         return
 
-    import random
-    from datetime import datetime, timedelta
-    import json
-
     # Create one order per user (or up to 5), but only if that user has no orders yet
     orders_to_create = user_ids[:5]
     extra = 2
@@ -192,8 +491,13 @@ def main():
     ensure_title_column(conn)
     ensure_password_hash_column(conn)
     ensure_roles(conn)
+    ensure_shift_schema(conn)
+    cleanup_legacy_schedule_data(conn)
     update_missing_passwords(conn)
     seed_users(conn)
+    shift_ids = seed_shift_templates(conn)
+    seed_shift_assignments(conn, shift_ids)
+    seed_staff_availability(conn)
     seed_menu_items(conn)
     seed_orders(conn)
     conn.close()

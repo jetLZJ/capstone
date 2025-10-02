@@ -31,8 +31,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   // Check role-based access if roles are provided
   if (allowedRoles && profile) {
-    const userRole = profile.role || '';
-    if (!allowedRoles.includes(userRole)) {
+    const userRole = (profile.role || '').toLowerCase();
+    const allowed = allowedRoles.map((role) => (role || '').toLowerCase());
+    if (!allowed.includes(userRole)) {
       return <Navigate to="/unauthorized" replace />;
     }
   }

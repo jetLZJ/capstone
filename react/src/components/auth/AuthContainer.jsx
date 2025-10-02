@@ -5,6 +5,7 @@ import RegisterForm from './RegisterForm';
 const AuthContainer = ({
   onSuccess,
   role = 'user',
+  portal = 'customer',
   demo = null,
   onQuickLogin = null,
   title,
@@ -12,7 +13,8 @@ const AuthContainer = ({
 }) => {
   const [activeTab, setActiveTab] = useState('login');
   const roleKey = role?.toString().toLowerCase();
-  const allowRegister = roleKey === 'user';
+  const portalKey = portal === 'staff' ? 'staff' : 'customer';
+  const allowRegister = portalKey === 'customer';
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -49,7 +51,7 @@ const AuthContainer = ({
       </div>
 
       {activeTab === 'login' ? (
-        <LoginForm onSuccess={onSuccess} role={roleKey} />
+        <LoginForm onSuccess={onSuccess} role={roleKey} portal={portalKey} />
       ) : (
         <RegisterForm onSuccess={onSuccess} />
       )}

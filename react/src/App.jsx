@@ -57,12 +57,12 @@ function App() {
               <Route path="/menu/profile" element={<Navigate to="/profile" replace />} />
               <Route path="/menu/*" element={<Navigate to="/menu" replace />} />
               <Route path="/schedule" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager','Staff','Server']}>
                   <SchedulePage />
                 </ProtectedRoute>
               } />
               <Route path="/analytics" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager']}>
                   <AnalyticsPage />
                 </ProtectedRoute>
               } />

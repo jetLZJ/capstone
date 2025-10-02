@@ -24,6 +24,7 @@ const LoginPage = () => {
   const defaultLanding = roleKey === 'user' ? '/menu' : '/';
   const from = location.state?.from?.pathname || defaultLanding;
   const isUser = roleKey === 'user';
+  const portal = isUser ? 'customer' : 'staff';
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -37,12 +38,12 @@ const LoginPage = () => {
 
   const handleQuickLogin = async (email) => {
     try {
-      await login({ email, password: 'password' });
+      await login({ email, password: 'password' }, { portal });
       toast.success(`Logged in as ${email}`);
       navigate(from, { replace: true });
     } catch (err) {
       console.error('Quick login failed', err);
-      toast.error('Quick login failed');
+      toast.error(err?.message || 'Quick login failed');
     }
   };
 
@@ -63,6 +64,7 @@ const LoginPage = () => {
         <AuthContainer
           onSuccess={handleAuthSuccess}
           role={roleKey}
+          portal={portal}
           title={isUser ? 'Customer Portal' : 'Staff Portal'}
           subtitle={isUser ? 'Sign in to your account or create a new one' : 'Access restaurant management systems'}
           demo={isUser ? { email: 'user1@example.com', password: 'password' } : demoUsers.filter((u) => u.role.toLowerCase() !== 'user')}

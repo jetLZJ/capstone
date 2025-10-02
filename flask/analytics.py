@@ -1,11 +1,17 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify  # type: ignore
 from utils import get_db
 import json
+
+try:
+    from .permissions import require_roles
+except Exception:  # pragma: no cover
+    from permissions import require_roles
 
 bp = Blueprint('analytics', __name__)
 
 
 @bp.route('/summary', methods=['GET'])
+@require_roles('Manager')
 def summary():
     conn = get_db()
     cur = conn.cursor()

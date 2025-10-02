@@ -2,7 +2,8 @@ from flask import Blueprint, jsonify, request  # type: ignore
 from utils import get_db
 import json
 from datetime import datetime, timedelta, date
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
+from collections.abc import Mapping, Sequence
 
 try:
     from .permissions import require_roles
@@ -10,6 +11,20 @@ except Exception:  # pragma: no cover
     from permissions import require_roles
 
 bp = Blueprint('analytics', __name__)
+
+
+def _row_value(row: Any, key: str, index: int) -> Any:
+    if isinstance(row, Mapping):
+        try:
+            return row[key]
+        except KeyError:
+            return row.get(key) if hasattr(row, 'get') else None
+    if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+        try:
+            return row[index]
+        except (IndexError, TypeError):
+            return None
+    return getattr(row, key, None)
 
 
 def _resolve_timeframe(raw_value: str) -> Tuple[str, date, date]:
@@ -41,8 +56,16 @@ def _compute_metrics(cur, menu_prices: Dict[int, float], menu_names: Dict[int, s
     order_rows = cur.fetchall()
     order_ids = []
     order_dates: Dict[int, date] = {}
-    for order_id, ts in order_rows:
-        order_ids.append(order_id)
+    for row in order_rows:
+        order_id = _row_value(row, 'id', 0)
+        ts = _row_value(row, 'order_timestamp', 1)
+        if order_id is None:
+            continue
+        try:
+            order_id_int = int(order_id)
+        except (TypeError, ValueError):
+            continue
+        order_ids.append(order_id_int)
         parsed_dt = None
         if isinstance(ts, datetime):
             parsed_dt = ts
@@ -57,7 +80,7 @@ def _compute_metrics(cur, menu_prices: Dict[int, float], menu_names: Dict[int, s
                     except ValueError:
                         continue
         if parsed_dt is not None:
-            order_dates[order_id] = parsed_dt.date()
+            order_dates[order_id_int] = parsed_dt.date()
 
     total_orders = len(order_ids)
 
@@ -73,14 +96,23 @@ def _compute_metrics(cur, menu_prices: Dict[int, float], menu_names: Dict[int, s
     if order_ids:
         placeholders = ','.join('?' for _ in order_ids)
         cur.execute(f'SELECT order_id, items FROM order_items WHERE order_id IN ({placeholders})', order_ids)
-        for order_id, items_json in cur.fetchall():
+        for row in cur.fetchall():
+            order_id = _row_value(row, 'order_id', 0)
+            items_json = _row_value(row, 'items', 1)
+            try:
+                order_id_int = int(order_id) if order_id is not None else None
+            except (TypeError, ValueError):
+                order_id_int = None
             try:
                 parsed = json.loads(items_json)
             except Exception:
                 continue
             order_revenue = 0.0
             day_key = None
-            order_day = order_dates.get(order_id)
+            if order_id_int is not None:
+                order_day = order_dates.get(order_id_int)
+            else:
+                order_day = None
             if order_day is not None:
                 day_key = order_day.isoformat()
             for entry in parsed or []:
@@ -123,14 +155,16 @@ def _compute_metrics(cur, menu_prices: Dict[int, float], menu_names: Dict[int, s
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
     cur.execute(
-        'SELECT assigned_user, COUNT(id) FROM shift_assignments WHERE shift_date BETWEEN ? AND ? GROUP BY assigned_user',
+        'SELECT assigned_user, COUNT(id) as assignment_count FROM shift_assignments WHERE shift_date BETWEEN ? AND ? GROUP BY assigned_user',
         (start_date_str, end_date_str),
     )
-    staff_utilization = [
-        {'user_id': row[0], 'assignments': row[1]}
-        for row in cur.fetchall()
-        if row[0] is not None or row[1]
-    ]
+    staff_utilization = []
+    for row in cur.fetchall():
+        user_id = _row_value(row, 'assigned_user', 0)
+        assignments = _row_value(row, 'assignment_count', 1)
+        if user_id is None and not assignments:
+            continue
+        staff_utilization.append({'user_id': user_id, 'assignments': assignments})
 
     return {
         'total_orders': total_orders,

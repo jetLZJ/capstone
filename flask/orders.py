@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, current_app
 from utils import get_db
 
 bp = Blueprint('orders', __name__)
+bp.strict_slashes = False
 
 try:  # optional JWT dependency to keep tests running when extension missing
     from flask_jwt_extended import get_jwt_identity as _get_jwt_identity
@@ -154,6 +155,7 @@ def _ensure_jwt():
 
 
 @bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 def create_order():
     jwt_required_fn = jwt_required
     get_identity_fn = get_jwt_identity
@@ -217,6 +219,7 @@ def create_order():
 
 
 @bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_orders():
     jwt_required_fn = jwt_required
     get_identity_fn = get_jwt_identity

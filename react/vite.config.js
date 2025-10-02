@@ -11,12 +11,12 @@ export default defineConfig({
       usePolling: true
     },
     // Allow overriding the proxy target with an environment variable so
-    // the frontend can be run either inside Docker (where "proxyserver"
+    // the frontend can be run either inside Docker (where "proxy"
     // resolves) or on the host (where you may want to use localhost).
     // Set VITE_PROXY_TARGET or PROXY_TARGET when starting the dev server
     // e.g. in PowerShell: $env:VITE_PROXY_TARGET='http://localhost:8080'; npm run dev
     proxy: (() => {
-      const target = process.env.VITE_PROXY_TARGET || process.env.PROXY_TARGET || 'http://proxyserver:8080';
+      const target = process.env.VITE_PROXY_TARGET || process.env.PROXY_TARGET || 'http://proxy:8080';
       const makeProxy = (path) => ({
         target,
         changeOrigin: true,
@@ -37,7 +37,7 @@ export default defineConfig({
               // so the browser does not receive an unresolved hostname. Examples handled:
               //  - http://proxyserver:8080/path -> /path
               //  - proxyserver/api/... -> /api/...
-              const newLoc = loc.replace(/(https?:\/\/)?proxyserver(:\d+)?/ig, '');
+              const newLoc = loc.replace(/(https?:\/\/)?proxyserver(:\d+)?/ig, '').replace(/(https?:\/\/)?proxy(:\d+)?/ig, '');
               let finalLoc = newLoc;
               // Ensure the location is an absolute path for the browser
               if (finalLoc && !finalLoc.startsWith('/')) {

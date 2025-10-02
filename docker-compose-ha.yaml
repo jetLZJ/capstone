@@ -1,0 +1,114 @@
+version: "3.9"
+
+networks:
+  ha-net:
+    driver: bridge
+
+volumes:
+  rqlite-node1:
+  rqlite-node2:
+  rqlite-node3:
+
+services:
+  # ---------------------------------------------------------------------------
+  # rqlite cluster (3 nodes for quorum)
+  # ---------------------------------------------------------------------------
+  rqlite-1:
+    image: rqlite/rqlite:v8.24.0
+    command: >-
+      /rqlited
+      -http-addr 0.0.0.0:4001
+      -raft-addr 0.0.0.0:4002
+      /rqlite/data
+    restart: unless-stopped
+    ports:
+      - "4001:4001" # optional: expose leader API externally for debugging
+    volumes:
+      - rqlite-node1:/rqlite/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4001/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [ha-net]
+
+  rqlite-2:
+    image: rqlite/rqlite:v8.24.0
+    command: >-
+      /rqlited
+      -http-addr 0.0.0.0:4001
+      -raft-addr 0.0.0.0:4002
+      -join http://rqlite-1:4001
+      /rqlite/data
+    restart: unless-stopped
+    volumes:
+      - rqlite-node2:/rqlite/data
+    networks: [ha-net]
+
+  rqlite-3:
+    image: rqlite/rqlite:v8.24.0
+    command: >-
+      /rqlited
+      -http-addr 0.0.0.0:4001
+      -raft-addr 0.0.0.0:4002
+      -join http://rqlite-1:4001
+      /rqlite/data
+    restart: unless-stopped
+    volumes:
+      - rqlite-node3:/rqlite/data
+    networks: [ha-net]
+
+  # ---------------------------------------------------------------------------
+  # Flask application servers (primary + secondary)
+  # ---------------------------------------------------------------------------
+  flask-primary:
+    build: ./flask
+    command: python app.py
+    environment:
+      FLASK_ENV: production
+      # Each Flask instance should read the comma-separated replica set and
+      # use it to initialize the rqlite client (see utils.get_db implementation).
+      RQLITE_URL: http://rqlite-1:4001
+      RQLITE_REPLICA_SET: http://rqlite-1:4001,http://rqlite-2:4001,http://rqlite-3:4001
+    depends_on:
+      - rqlite-1
+      - rqlite-2
+      - rqlite-3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks: [ha-net]
+
+  flask-secondary:
+    build: ./flask
+    command: python app.py
+    environment:
+      FLASK_ENV: production
+      RQLITE_URL: http://rqlite-2:4001
+      RQLITE_REPLICA_SET: http://rqlite-1:4001,http://rqlite-2:4001,http://rqlite-3:4001
+    depends_on:
+      - rqlite-1
+      - rqlite-2
+      - rqlite-3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks: [ha-net]
+
+  # ---------------------------------------------------------------------------
+  # nginx proxy with failover logic
+  # ---------------------------------------------------------------------------
+  proxy:
+    build: ./proxy
+    depends_on:
+      - flask-primary
+      - flask-secondary
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./proxy/config/nginx-ha.conf:/etc/nginx/nginx.conf:ro
+    networks: [ha-net]

@@ -1,7 +1,7 @@
 import importlib
 import sqlite3
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, cast
 
 from flask import Blueprint, jsonify, request
 from marshmallow import ValidationError
@@ -17,7 +17,7 @@ try:  # pragma: no cover - optional dependency during tooling
 except Exception:
     jwt_module = None
 
-from utils import get_db
+from utils import RqliteError, get_db
 from schemas import ShiftSchema
 
 try:
@@ -33,24 +33,69 @@ WORKING_DAY_END_HOUR = 22
 MIN_SHIFT_DURATION_MINUTES = 6 * 60
 
 
+def _normalize_date_token(value: Any) -> str:
+    if value is None:
+        return ''
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+
+    try:
+        token = str(value).strip()
+    except Exception:
+        return ''
+
+    if not token:
+        return ''
+
+    candidate = token
+    if candidate.endswith('Z'):
+        candidate = candidate[:-1] + '+00:00'
+
+    for fmt in (None, '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            if fmt:
+                parsed = datetime.strptime(candidate[:19], fmt)
+            else:
+                parsed = datetime.fromisoformat(candidate)
+            return parsed.date().isoformat()
+        except ValueError:
+            continue
+
+    if len(token) >= 10 and token[4] == '-' and token[7] == '-':
+        return token[:10]
+
+    return token
+
+
 def ensure_schedule_schema() -> None:
     """Ensure the database has the latest scheduling columns/indexes."""
     conn = get_db()
     cur = conn.cursor()
 
-    def _column_exists(table: str, column: str) -> bool:
-        cur.execute(f'PRAGMA table_info({table})')
-        return any(row[1] == column for row in cur.fetchall())
+    def _safe_add_column(table: str, column_def: str) -> bool:
+        try:
+            cur.execute(f'ALTER TABLE {table} ADD COLUMN {column_def}')
+            return True
+        except Exception as exc:
+            message = str(exc).lower()
+            duplicate_tokens = (
+                'duplicate column name',
+                'duplicate column',
+                'already exists',
+            )
+            if any(token in message for token in duplicate_tokens):
+                return False
+            if isinstance(exc, RqliteError) and any(token in message for token in duplicate_tokens):
+                return False
+            if isinstance(exc, sqlite3.OperationalError) and any(token in message for token in duplicate_tokens):
+                return False
+            raise
 
-    def _add_column(table: str, column_def: str) -> None:
-        cur.execute(f'ALTER TABLE {table} ADD COLUMN {column_def}')
-
-    if not _column_exists('shifts', 'recurrence_rule'):
-        _add_column('shifts', 'recurrence_rule TEXT')
-    if not _column_exists('shifts', 'default_status'):
-        _add_column('shifts', "default_status TEXT DEFAULT 'scheduled'")
-    if not _column_exists('shifts', 'default_duration'):
-        _add_column('shifts', 'default_duration INTEGER')
+    _safe_add_column('shifts', 'recurrence_rule TEXT')
+    _safe_add_column('shifts', "default_status TEXT DEFAULT 'scheduled'")
+    _safe_add_column('shifts', 'default_duration INTEGER')
 
     shift_columns = {
         'start_time': 'start_time TEXT',
@@ -64,8 +109,7 @@ def ensure_schedule_schema() -> None:
     }
     added_columns: Dict[str, bool] = {}
     for column, definition in shift_columns.items():
-        if not _column_exists('shift_assignments', column):
-            _add_column('shift_assignments', definition)
+        if _safe_add_column('shift_assignments', definition):
             added_columns[column] = True
 
     if added_columns.get('created_at'):
@@ -94,10 +138,6 @@ def ensure_schedule_schema() -> None:
     cur.execute('CREATE INDEX IF NOT EXISTS idx_staff_availability_week ON staff_availability (availability_date)')
 
     conn.commit()
-
-
-ensure_schedule_schema()
-
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
@@ -161,19 +201,21 @@ def _serialize_assignment(row: Dict[str, Any]) -> Dict[str, Any]:
     staff_first = row.get('first_name') or ''
     staff_last = row.get('last_name') or ''
     staff_name = (staff_first + ' ' + staff_last).strip() or row.get('staff_email') or 'Unassigned'
+    shift_date = _normalize_date_token(row.get('shift_date'))
+    schedule_week_start = _normalize_date_token(row.get('schedule_week_start'))
     return {
         'id': row.get('id'),
         'shift_id': row.get('shift_id'),
         'staff_id': row.get('assigned_user'),
         'staff_name': staff_name,
         'role': row.get('role') or row.get('role_required') or 'Unassigned',
-        'shift_date': row.get('shift_date'),
+        'shift_date': shift_date,
         'start': row.get('start_time'),
         'end': row.get('end_time'),
         'status': row.get('status') or 'scheduled',
         'notes': row.get('notes') or '',
         'recurrence_parent_id': row.get('recurrence_parent_id'),
-        'schedule_week_start': row.get('schedule_week_start'),
+        'schedule_week_start': schedule_week_start,
     }
 
 
@@ -360,15 +402,7 @@ def weekly_schedule():
             }
 
         for entry in assignments:
-            raw_key = entry.get('shift_date')
-            if isinstance(raw_key, datetime):
-                key = raw_key.date().isoformat()
-            elif isinstance(raw_key, date):
-                key = raw_key.isoformat()
-            elif raw_key is None:
-                key = ''
-            else:
-                key = str(raw_key)
+            key = _normalize_date_token(entry.get('shift_date'))
 
             if key not in days_map:
                 label = 'Unknown'
@@ -694,7 +728,7 @@ def my_assignments():
     return inner()
 
 
-def _serialize_availability_row(row: sqlite3.Row) -> Dict[str, Any]:
+def _serialize_availability_row(row: Mapping[str, Any]) -> Dict[str, Any]:
     full_name = ' '.join(filter(None, [(row['first_name'] or '').strip(), (row['last_name'] or '').strip()])).strip() or None
     flag = _normalize_availability_flag(row['is_available'])
     is_available: Optional[bool]
@@ -702,11 +736,7 @@ def _serialize_availability_row(row: sqlite3.Row) -> Dict[str, Any]:
         is_available = None
     else:
         is_available = bool(flag)
-    raw_date = row['availability_date']
-    if isinstance(raw_date, (datetime, date)):
-        date_value = raw_date.isoformat()
-    else:
-        date_value = str(raw_date)
+    date_value = _normalize_date_token(row.get('availability_date'))
     return {
         'id': row['id'],
         'user_id': row['user_id'],

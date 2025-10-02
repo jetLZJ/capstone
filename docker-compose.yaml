@@ -5,37 +5,158 @@ networks:
     driver: bridge
     internal: true
 
+volumes:
+  rqlite-node1:
+  rqlite-node2:
+  rqlite-node3:
+
 services:
-  proxyserver:
+  rqlite-1:
+    image: rqlite/rqlite:latest
+    command: ["/bin/sh", "/scripts/rqlite-entrypoint.sh"]
+    restart: unless-stopped
+    environment:
+      RQLITE_HTTP_ADDR: 0.0.0.0:4001
+      RQLITE_RAFT_ADDR: 0.0.0.0:4002
+      RQLITE_HTTP_ADV_ADDR: rqlite-1:4001
+      RQLITE_RAFT_ADV_ADDR: rqlite-1:4002
+      RQLITE_BOOTSTRAP_EXPECT: "3"
+      RQLITE_NODE_ID: node1
+    ports:
+      - "4001:4001"
+    volumes:
+      - rqlite-node1:/rqlite/file/data
+      - ./scripts/rqlite-entrypoint.sh:/scripts/rqlite-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD", "/bin/rqlite", "-H", "localhost", "-p", "4001", "status"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal_net
+
+  rqlite-2:
+    image: rqlite/rqlite:latest
+    command: ["/bin/sh", "/scripts/rqlite-entrypoint.sh"]
+    environment:
+      RQLITE_HTTP_ADDR: 0.0.0.0:4001
+      RQLITE_RAFT_ADDR: 0.0.0.0:4002
+      RQLITE_HTTP_ADV_ADDR: rqlite-2:4001
+      RQLITE_RAFT_ADV_ADDR: rqlite-2:4002
+      RQLITE_JOIN: rqlite-1:4002
+      RQLITE_NODE_ID: node2
+    restart: unless-stopped
+    volumes:
+      - rqlite-node2:/rqlite/file/data
+      - ./scripts/rqlite-entrypoint.sh:/scripts/rqlite-entrypoint.sh:ro
+    networks:
+      - internal_net
+
+  rqlite-3:
+    image: rqlite/rqlite:latest
+    command: ["/bin/sh", "/scripts/rqlite-entrypoint.sh"]
+    environment:
+      RQLITE_HTTP_ADDR: 0.0.0.0:4001
+      RQLITE_RAFT_ADDR: 0.0.0.0:4002
+      RQLITE_HTTP_ADV_ADDR: rqlite-3:4001
+      RQLITE_RAFT_ADV_ADDR: rqlite-3:4002
+      RQLITE_JOIN: rqlite-1:4002
+      RQLITE_NODE_ID: node3
+    restart: unless-stopped
+    volumes:
+      - rqlite-node3:/rqlite/file/data
+      - ./scripts/rqlite-entrypoint.sh:/scripts/rqlite-entrypoint.sh:ro
+    networks:
+      - internal_net
+
+  flask-primary:
+    build: ./flask
+    command: python app.py
+    restart: unless-stopped
+    environment:
+      FLASK_ENV: production
+      RQLITE_URL: http://rqlite-1:4001
+      RQLITE_REPLICA_SET: http://rqlite-1:4001,http://rqlite-2:4001,http://rqlite-3:4001
+      RQLITE_HTTP_TIMEOUT: "10"
+    depends_on:
+      rqlite-1:
+        condition: service_healthy
+      rqlite-2:
+        condition: service_started
+      rqlite-3:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request as u; sys.exit(0 if u.urlopen('http://127.0.0.1:5000/health', timeout=4).getcode()==200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal_net
+
+  flask-secondary:
+    build: ./flask
+    command: python app.py
+    restart: unless-stopped
+    environment:
+      FLASK_ENV: production
+      RQLITE_URL: http://rqlite-2:4001
+      RQLITE_REPLICA_SET: http://rqlite-1:4001,http://rqlite-2:4001,http://rqlite-3:4001
+      RQLITE_HTTP_TIMEOUT: "10"
+    depends_on:
+      rqlite-1:
+        condition: service_healthy
+      rqlite-2:
+        condition: service_started
+      rqlite-3:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request as u; sys.exit(0 if u.urlopen('http://127.0.0.1:5000/health', timeout=4).getcode()==200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal_net
+
+  proxy:
     build: ./proxy
+    depends_on:
+      - flask-primary
+      - flask-secondary
     ports:
       - "8080:8080"
-    networks:
-      - public_net
-      - internal_net
-    depends_on:
-      - flaskserver
-      - frontendserver
-  flaskserver:
-    build: ./flask
-    expose:
-      - "5000"
-    working_dir: /app
-    environment:
-      DB_PATH: /app/data/app.db
-    command: python app.py
-    networks:
-      - internal_net
     volumes:
-      - ./flask/data:/app/data
-  frontendserver:
-    build: ./react
-    ports:
-      - "3000:3000"
+      - ./proxy/config/nginx-ha.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     networks:
       - public_net
+      - internal_net
+
+  frontend:
+    build: ./react
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+    environment:
+      NODE_ENV: development
+      VITE_API_BASE_URL: http://proxy:8080
     volumes:
       - ./react:/app
       - /app/node_modules
-    environment:
-      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    depends_on:
+      - proxy
+    networks:
+      - public_net

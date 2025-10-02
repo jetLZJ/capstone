@@ -69,7 +69,7 @@ const RevenueTrendChart = ({ data }) => {
         {leftAxisLabels.map((label, idx) => {
           const y = chartHeight - padding.bottom - (label / maxRevenue) * usableHeight;
           return (
-            <g key={`grid-${label}`}>
+            <g key={`grid-${idx}-${label}`}>
               <line
                 x1={padding.left}
                 x2={chartWidth - padding.right}
@@ -92,11 +92,11 @@ const RevenueTrendChart = ({ data }) => {
         })}
 
         {/* right axis labels */}
-        {rightAxisLabels.map((label) => {
+        {rightAxisLabels.map((label, idx) => {
           const y = chartHeight - padding.bottom - (label / maxOrders) * usableHeight;
           return (
             <text
-              key={`right-${label}`}
+              key={`right-${idx}-${label}`}
               x={chartWidth - padding.right + 10}
               y={y + 4}
               fontSize="12"
@@ -113,7 +113,7 @@ const RevenueTrendChart = ({ data }) => {
           const barX = getBarX(idx);
           const barY = chartHeight - padding.bottom - barHeight;
           return (
-            <g key={point.day}>
+            <g key={`${point.day}-${idx}`}>
               <rect
                 x={barX}
                 y={barY}

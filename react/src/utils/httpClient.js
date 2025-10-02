@@ -1,12 +1,47 @@
 import axios from 'axios';
 import AuthService from '../services/AuthService';
 
+const rawBase = (import.meta.env?.VITE_API_BASE_URL || '').trim();
+
+const INTERNAL_DOCKER_HOSTS = new Set(['proxy', 'proxyserver']);
+
+const normalizeBaseURL = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  // Permit relative paths such as "/api"
+  if (value.startsWith('/')) {
+    return value.replace(/\/+$/, '');
+  }
+
+  if (typeof window === 'undefined') {
+    return value.replace(/\/+$/, '');
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+
+    if (INTERNAL_DOCKER_HOSTS.has(url.hostname) && url.hostname !== window.location.hostname) {
+      const fallbackPort = url.port || '8080';
+      const needsPort = fallbackPort && !['80', '443'].includes(fallbackPort);
+      const rewrittenOrigin = `${url.protocol}//${window.location.hostname}${needsPort ? `:${fallbackPort}` : ''}`;
+      const rebuilt = `${rewrittenOrigin}${url.pathname}${url.search}${url.hash}`;
+      return rebuilt.replace(/\/+$/, '');
+    }
+
+    return url.toString().replace(/\/+$/, '');
+  } catch (err) {
+    // If the value is not a valid absolute URL treat it as-is
+    return value.replace(/\/+$/, '');
+  }
+};
+
+const baseURL = normalizeBaseURL(rawBase);
+
 // Create axios instance with default config
 const httpClient = axios.create({
-  // Leave baseURL empty so callers can include '/api' explicitly.
-  // Some components already include '/api' in URLs; keeping baseURL empty
-  // avoids double '/api/api' paths.
-  baseURL: '',
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },

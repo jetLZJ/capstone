@@ -82,6 +82,7 @@ def _row_to_item(row: Any) -> Dict[str, Any]:
 
 
 @bp.route('/', methods=['GET'])
+@bp.route('', methods=['GET'])
 def list_items():
     conn = get_db()
     cur = conn.cursor()
@@ -137,6 +138,7 @@ def get_item(item_id: int):
 
 
 @bp.route('/', methods=['POST'])
+@bp.route('', methods=['POST'])
 @require_roles('Manager')
 def create_item():
     data = request.get_json(silent=True) or {}

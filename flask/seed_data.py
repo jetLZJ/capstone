@@ -12,6 +12,7 @@ import random
 import sqlite3
 from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
+from collections.abc import Mapping as MappingABC, Sequence as SequenceABC
 
 ROOT = os.path.dirname(__file__)
 DB = os.environ.get('DB_PATH', os.path.join(ROOT, 'data', 'app.db'))
@@ -30,6 +31,31 @@ CAT_IMAGES = {
 }
 
 
+def _is_duplicate_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    duplicate_tokens = (
+        'duplicate column name',
+        'duplicate column',
+        'already exists',
+    )
+    return any(token in message for token in duplicate_tokens)
+
+
+def _is_unique_constraint_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    unique_tokens = (
+        'unique constraint failed',
+        'unique constraint violation',
+        'unique constraint',
+    )
+    return any(token in message for token in unique_tokens)
+
+
+def _table_has_rows(cur: sqlite3.Cursor, table: str) -> bool:
+    cur.execute(f'SELECT 1 FROM {table} LIMIT 1')
+    return cur.fetchone() is not None
+
+
 def _column_exists(cur: sqlite3.Cursor, table: str, column: str) -> bool:
     cur.execute(f"PRAGMA table_info({table})")
     return any(row[1] == column for row in cur.fetchall())
@@ -44,8 +70,15 @@ def ensure_title_column(conn):
     cols = [r[1] for r in cur.fetchall()]
     if 'title' not in cols:
         print('Adding title column to users')
-        cur.execute('ALTER TABLE users ADD COLUMN title TEXT')
-        conn.commit()
+        try:
+            cur.execute('ALTER TABLE users ADD COLUMN title TEXT')
+            conn.commit()
+        except Exception as exc:
+            if _is_duplicate_column_error(exc):
+                print('title column already present (detected during ALTER)')
+                conn.rollback()
+            else:
+                raise
     else:
         print('title column already present')
 
@@ -56,8 +89,15 @@ def ensure_password_hash_column(conn):
     cols = [r[1] for r in cur.fetchall()]
     if 'password_hash' not in cols:
         print('Adding password_hash column to users')
-        cur.execute('ALTER TABLE users ADD COLUMN password_hash TEXT')
-        conn.commit()
+        try:
+            cur.execute('ALTER TABLE users ADD COLUMN password_hash TEXT')
+            conn.commit()
+        except Exception as exc:
+            if _is_duplicate_column_error(exc):
+                print('password_hash column already present (detected during ALTER)')
+                conn.rollback()
+            else:
+                raise
     else:
         print('password_hash column already present')
 
@@ -82,6 +122,14 @@ def ensure_roles(conn):
     roles = ['Admin','Manager','Staff','User']
     for r in roles:
         cur.execute('INSERT OR IGNORE INTO roles (name) VALUES (?)', (r,))
+    conn.commit()
+
+
+def ensure_types(conn):
+    cur = conn.cursor()
+    types = ['Appetizer', 'Main', 'Dessert', 'Beverage']
+    for item in types:
+        cur.execute('INSERT OR IGNORE INTO types (name) VALUES (?)', (item,))
     conn.commit()
 
 
@@ -170,7 +218,8 @@ def seed_users(conn):
     cur = conn.cursor()
     # Determine role ids
     cur.execute("SELECT id, name FROM roles")
-    role_map = {name: id for id, name in cur.fetchall()}
+    role_rows = cur.fetchall()
+    role_map = {row[1]: row[0] for row in role_rows}
 
     users: List[Dict[str, Optional[str]]] = []
     # 1 admin
@@ -192,31 +241,58 @@ def seed_users(conn):
         email = u.get('email')
         u['profile_pic'] = CAT_IMAGES.get(email) if email else None
     for u in users:
-        cur.execute('SELECT id, profile_pic, title FROM users WHERE email=?', (u['email'],))
-        row = cur.fetchone()
-        if row:
-            updates = []
-            params: List[Any] = []
-            if u.get('profile_pic') and row[1] != u['profile_pic']:
-                updates.append('profile_pic=?')
-                params.append(u['profile_pic'])
-            if u.get('title') and row[2] != u['title']:
-                updates.append('title=?')
-                params.append(u['title'])
-            if updates:
-                params.append(u['email'])
-                cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE email=?", params)
-                print('User exists, updating profile:', u['email'])
-            else:
-                print('User exists, skipping:', u['email'])
-            continue
         role_id = role_map.get(u['role'])
         pw_hash = hash_password('password')
-        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date,password_hash,profile_pic) VALUES (?,?,?,?,?,?,?,?,?)', (
-            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow(), pw_hash, u.get('profile_pic')
-        ))
-        print('Inserted user:', u['email'])
+        try:
+            cur.execute(
+                'INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date,password_hash,profile_pic) VALUES (?,?,?,?,?,?,?,?,?)',
+                (
+                    u['first_name'],
+                    u['last_name'],
+                    u['email'],
+                    u['phone_number'],
+                    role_id,
+                    u['title'],
+                    datetime.utcnow().isoformat(),
+                    pw_hash,
+                    u.get('profile_pic'),
+                ),
+            )
+            print('Inserted user:', u['email'])
+        except Exception as exc:
+            if _is_unique_constraint_error(exc):
+                print('User exists, skipping insert:', u['email'])
+            else:
+                raise
+
+        if role_id is not None:
+            cur.execute(
+                'UPDATE users SET role_id=? WHERE email=? AND (role_id IS NULL OR role_id != ?)',
+                (role_id, u['email'], role_id),
+            )
+
+        if u.get('profile_pic'):
+            cur.execute(
+                'UPDATE users SET profile_pic=? WHERE email=? AND (profile_pic IS NULL OR profile_pic != ?)',
+                (u['profile_pic'], u['email'], u['profile_pic']),
+            )
+        if u.get('title'):
+            cur.execute(
+                'UPDATE users SET title=? WHERE email=? AND (title IS NULL OR title != ?)',
+                (u['title'], u['email'], u['title']),
+            )
     conn.commit()
+
+
+def _extract_row_value(row: Any, key: str, index: int) -> Any:
+    if isinstance(row, MappingABC):
+        return row.get(key)
+    if isinstance(row, SequenceABC):
+        try:
+            return row[index]
+        except (IndexError, TypeError):
+            return None
+    return None
 
 
 def _lookup_user_ids(conn: sqlite3.Connection, emails: List[str]) -> Dict[str, Optional[int]]:
@@ -227,8 +303,22 @@ def _lookup_user_ids(conn: sqlite3.Connection, emails: List[str]) -> Dict[str, O
     cur.execute(f'SELECT email, id FROM users WHERE email IN ({placeholders})', tuple(emails))
     rows = cur.fetchall()
     mapping: Dict[str, Optional[int]] = {email: None for email in emails}
-    for email, uid in rows:
-        mapping[email] = uid
+    for row in rows:
+        email_val = _extract_row_value(row, 'email', 0)
+        id_val = _extract_row_value(row, 'id', 1)
+        if email_val is None:
+            continue
+        try:
+            email_key = str(email_val)
+        except Exception:
+            continue
+        if id_val is None:
+            mapping[email_key] = None
+        else:
+            try:
+                mapping[email_key] = int(id_val)
+            except (TypeError, ValueError):
+                mapping[email_key] = None
     return mapping
 
 
@@ -329,11 +419,16 @@ def _combine_iso(day: date, time_str: str) -> str:
     return f"{day.isoformat()}T{time_str}:00"
 
 
-def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) -> None:
+def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int], *, preserve_existing: bool = False) -> None:
     ensure_shift_schema(conn)
     cur = conn.cursor()
 
-    cur.execute('DELETE FROM shift_assignments')
+    if preserve_existing and _table_has_rows(cur, 'shift_assignments'):
+        print('Shift assignments already present, skipping reseed')
+        return
+
+    if not preserve_existing:
+        cur.execute('DELETE FROM shift_assignments')
 
     staff_emails = [
         'maya.manager@example.com',
@@ -515,13 +610,20 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
     conn.commit()
 
 
-def seed_staff_availability(conn: sqlite3.Connection) -> None:
+def seed_staff_availability(conn: sqlite3.Connection, *, preserve_existing: bool = False) -> None:
     ensure_shift_schema(conn)
     cur = conn.cursor()
 
     week_start = _start_of_week()
     week_end = week_start + timedelta(days=6)
-    cur.execute('DELETE FROM staff_availability WHERE availability_date BETWEEN ? AND ?', (week_start.isoformat(), week_end.isoformat()))
+    if preserve_existing:
+        cur.execute('SELECT COUNT(*) FROM staff_availability WHERE availability_date BETWEEN ? AND ?', (week_start.isoformat(), week_end.isoformat()))
+        existing = cur.fetchone()
+        if existing and existing[0]:
+            print('Staff availability already present for current week, skipping reseed')
+            return
+    else:
+        cur.execute('DELETE FROM staff_availability WHERE availability_date BETWEEN ? AND ?', (week_start.isoformat(), week_end.isoformat()))
 
     staff_patterns = {
         'sam.staff@example.com': {0: True, 1: True, 2: False, 4: True},
@@ -548,14 +650,18 @@ def seed_staff_availability(conn: sqlite3.Connection) -> None:
 
     conn.commit()
 
-def seed_menu_items(conn):
+def seed_menu_items(conn, *, preserve_existing: bool = False):
     cur = conn.cursor()
     # Get type ids
     cur.execute('SELECT id, name FROM types')
     types = [r[0] for r in cur.fetchall()]
     # Reset existing items to ensure we always seed the curated collection
-    print('Clearing existing menu items to reseed curated offerings')
-    cur.execute('DELETE FROM menu_items')
+    if preserve_existing and _table_has_rows(cur, 'menu_items'):
+        print('Menu items already present, skipping reseed')
+        return
+    if not preserve_existing:
+        print('Clearing existing menu items to reseed curated offerings')
+        cur.execute('DELETE FROM menu_items')
 
     sample_items = [
         ('Heirloom Burrata Salad', 12.5, 'Heirloom tomatoes, burrata, basil oil, balsamic pearls', 'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=1200&q=80', 18),
@@ -581,8 +687,14 @@ def seed_menu_items(conn):
     conn.commit()
 
 
-def seed_orders(conn):
+def seed_orders(conn, *, preserve_existing: bool = False):
     cur = conn.cursor()
+    if preserve_existing and _table_has_rows(cur, 'orders'):
+        print('Orders already present, skipping reseed')
+        return
+    if not preserve_existing:
+        cur.execute('DELETE FROM order_items')
+        cur.execute('DELETE FROM orders')
     cur.execute("SELECT id FROM roles WHERE name='User'")
     row = cur.fetchone()
     user_role_id = row[0] if row else None
@@ -616,7 +728,7 @@ def seed_orders(conn):
             order_time = base_time + timedelta(weeks=offset, days=user_index % 3, hours=week_index * 2)
             if order_time > now:
                 continue
-            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
+            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time.isoformat()))
             order_id = cur.lastrowid
             items = build_items(user_index + week_index)
             cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
@@ -628,7 +740,7 @@ def seed_orders(conn):
             order_time = base_time + timedelta(weeks=offset, days=5, hours=18 + week_index)
             if order_time > now:
                 continue
-            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
+            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time.isoformat()))
             order_id = cur.lastrowid
             seed_index = (uid + week_index) % len(item_ids)
             items = build_items(seed_index)
@@ -638,6 +750,47 @@ def seed_orders(conn):
     conn.commit()
     print(f'Seeded {created_orders} orders spanning {len(week_offsets)} weeks')
 
+
+def _should_reseed_assignments(conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM shift_assignments')
+    total = cur.fetchone()
+    total_count = int(total[0]) if total and total[0] is not None else 0
+    if total_count == 0:
+        return True
+
+    cur.execute("SELECT COUNT(*) FROM shift_assignments WHERE status IS NULL OR LOWER(status) != 'open'")
+    eligible = cur.fetchone()
+    eligible_count = int(eligible[0]) if eligible and eligible[0] is not None else 0
+    if eligible_count == 0:
+        return False
+
+    cur.execute(
+        "SELECT COUNT(*) FROM shift_assignments WHERE (status IS NULL OR LOWER(status) != 'open') AND (assigned_user IS NULL OR assigned_user = '')"
+    )
+    missing = cur.fetchone()
+    missing_count = int(missing[0]) if missing and missing[0] is not None else 0
+
+    return missing_count >= eligible_count
+
+
+def ensure_seed_data(conn) -> None:
+    """Ensure the database has the default seed data without wiping existing rows."""
+    ensure_title_column(conn)
+    ensure_password_hash_column(conn)
+    ensure_types(conn)
+    ensure_roles(conn)
+    ensure_shift_schema(conn)
+    cleanup_legacy_schedule_data(conn)
+    update_missing_passwords(conn)
+    seed_users(conn)
+    shift_ids = seed_shift_templates(conn)
+    preserve_assignments = not _should_reseed_assignments(conn)
+    seed_shift_assignments(conn, shift_ids, preserve_existing=preserve_assignments)
+    seed_staff_availability(conn, preserve_existing=True)
+    seed_menu_items(conn, preserve_existing=True)
+    seed_orders(conn, preserve_existing=True)
+
 def main():
     if not os.path.exists(DB):
         print('DB not found, run init_db.py first')
@@ -645,6 +798,7 @@ def main():
     conn = sqlite3.connect(DB)
     ensure_title_column(conn)
     ensure_password_hash_column(conn)
+    ensure_types(conn)
     ensure_roles(conn)
     ensure_shift_schema(conn)
     cleanup_legacy_schedule_data(conn)

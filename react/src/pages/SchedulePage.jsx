@@ -32,7 +32,7 @@ const parseWeekString = (value) => {
 
 const SchedulePage = () => {
   const { authFetch, profile } = useAuth();
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()).toISOString().slice(0, 10));
+  const [weekStart, setWeekStart] = useState(() => toDateInputValue(startOfWeek(new Date())));
   const [data, setData] = useState({ days: [], coverage: {}, role: null });
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +45,9 @@ const SchedulePage = () => {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [teamAvailability, setTeamAvailability] = useState({});
+
+  const hasScheduleData = Array.isArray(data?.days) && data.days.length > 0;
+  const isInitialLoading = loading && !hasScheduleData;
 
   const role = useMemo(() => data.role || profile?.role || 'User', [data.role, profile?.role]);
   const normalizedRole = (role || '').toLowerCase();
@@ -314,6 +317,17 @@ const SchedulePage = () => {
       setAvailabilitySaving(false);
     }
   }, [authFetch, loadAvailability, activeWeekStart]);
+
+  if (isInitialLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--app-bg)] px-4">
+        <div className="flex flex-col items-center gap-4 text-[var(--app-muted)]">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[color-mix(in_srgb,var(--app-primary)_35%,_transparent_65%)] border-t-[var(--app-primary)]" aria-label="Loading schedule" />
+          <p className="text-sm font-medium">Loading this week’s schedule…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-[var(--app-bg)] py-8">

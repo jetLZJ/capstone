@@ -78,7 +78,7 @@ const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
       {...listeners}
       {...attributes}
       className={classNames(
-        'flex h-full flex-col justify-between rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
+        'flex h-full flex-col rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
         isManager ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]' : 'cursor-default',
         isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
@@ -89,28 +89,27 @@ const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
       title={tooltip}
       style={style}
     >
-      <div className="flex items-start justify-between gap-3 p-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className={classNames('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium', meta.bg)}>
-              <span className={classNames('h-2 w-2 rounded-full', meta.dot)} />
-              {meta.label}
-            </span>
-            {durationLabel ? (
-              <span className="whitespace-nowrap text-xs text-[var(--app-muted)]">{durationLabel}</span>
-            ) : null}
-          </div>
+      <div className="flex flex-col gap-3 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={classNames('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--app-text)_80%,_var(--app-bg)_20%)]', meta.bg)}>
+            <span className={classNames('h-2 w-2 rounded-full', meta.dot)} />
+            {meta.label}
+          </span>
+          {durationLabel ? (
+            <span className="text-[11px] font-medium text-[var(--app-muted)]">{durationLabel}</span>
+          ) : null}
+        </div>
+        <div className="min-w-0 space-y-2">
           <div className="truncate text-sm font-semibold text-[var(--app-text)]" title={assignment.staff_name || 'Unassigned'}>
             {assignment.staff_name || 'Unassigned'}
           </div>
-          <div className="truncate text-xs text-[var(--app-muted)]" title={assignment.role || 'General'}>
-            {assignment.role || 'General'}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="whitespace-nowrap text-sm font-medium text-[var(--app-text)]">{formatTimeRange(assignment.start, assignment.end)}</div>
-          <div className="text-xs text-[var(--app-muted)]">
-            {Number.isNaN(start.getTime()) ? '' : start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <div className="flex flex-col gap-1 text-xs text-[var(--app-muted)]">
+            <span className="truncate" title={assignment.role || 'General'}>
+              {assignment.role || 'General'}
+            </span>
+            <span className="truncate font-medium text-[var(--app-text)]" title={formatTimeRange(assignment.start, assignment.end)}>
+              {formatTimeRange(assignment.start, assignment.end)}
+            </span>
           </div>
         </div>
       </div>

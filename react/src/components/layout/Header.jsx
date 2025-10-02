@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiMenu,
   FiX,
@@ -11,6 +11,7 @@ import {
 import useAuth from '../../hooks/useAuth';
 
 const ORDER_META_KEY = 'capstone-order-meta';
+const THEME_MODE_KEY = 'capstone-theme-mode';
 
 const readOrderMetaCount = () => {
   if (typeof window === 'undefined') return 0;
@@ -26,15 +27,52 @@ const readOrderMetaCount = () => {
   }
 };
 
+const getInitialDarkMode = () => {
+  if (typeof window === 'undefined') return false;
+  const stored = window.localStorage.getItem(THEME_MODE_KEY);
+  if (stored === 'dark') return true;
+  if (stored === 'light') return false;
+  return typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : false;
+};
+
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => getInitialDarkMode());
   const [orderCount, setOrderCount] = useState(() => readOrderMetaCount());
   const location = useLocation();
   const { isAuthenticated, logout, profile } = useAuth();
+  const navigate = useNavigate();
 
   const role = (profile?.role || '').toLowerCase();
   const isUserRole = isAuthenticated && role === 'user';
+  const isManagerOrAdmin = ['manager', 'admin'].includes(role);
+  const isStaffOnly = ['staff', 'server'].includes(role) && !isManagerOrAdmin;
+
+  const staffNavItems = useMemo(
+    () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+    ],
+    [],
+  );
+
+  const managerNavItems = useMemo(
+    () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
+      {
+        label: 'Menu',
+        to: '/menu',
+        isActive: (path) => ['/menu', '/orders', '/profile'].some((prefix) => path.startsWith(prefix)),
+      },
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+      { label: 'Analytics', to: '/analytics', isActive: (path) => path.startsWith('/analytics') },
+    ],
+    [],
+  );
+
+  const navItems = isAuthenticated ? (isStaffOnly ? staffNavItems : managerNavItems) : [];
 
   useEffect(() => {
     const updateFromStorage = () => setOrderCount(readOrderMetaCount());
@@ -73,15 +111,22 @@ const Header = () => {
   const toggleMenu = () => setIsOpen((prev) => !prev);
 
   const toggleDarkMode = () => {
-    setDarkMode((prev) => {
-      const next = !prev;
-      if (next) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-      return next;
-    });
+    setDarkMode((prev) => !prev);
+  };
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', darkMode);
+    }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_MODE_KEY, darkMode ? 'dark' : 'light');
+    }
+  }, [darkMode]);
+
+  const handleLogout = async () => {
+    setIsOpen(false);
+    await logout();
+    navigate('/');
   };
 
   if (isUserRole) {
@@ -91,8 +136,9 @@ const Header = () => {
           <div className="flex flex-col gap-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <Link to="/menu" className="text-2xl font-semibold text-[var(--app-text)] font-serif">
-                  Bella Vista
+                <Link to="/menu" className="flex items-center gap-3">
+                  <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-10 w-10 rounded-full object-cover" />
+                  <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
                 </Link>
                 <p className="mt-1 text-sm text-[var(--app-muted)]">
                   Welcome back, {profile?.first_name || 'Guest'}
@@ -100,6 +146,14 @@ const Header = () => {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] text-[var(--app-text)] transition hover:border-[var(--app-primary)]"
+                  aria-label="Toggle theme"
+                >
+                  {darkMode ? <FiSun className="text-base" /> : <FiMoon className="text-base" />}
+                </button>
                 <Link
                   to="/orders"
                   className="inline-flex items-center gap-2 rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[var(--app-primary)]"
@@ -109,7 +163,7 @@ const Header = () => {
                 </Link>
                 <button
                   type="button"
-                  onClick={logout}
+                  onClick={handleLogout}
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
                 >
                   <FiLogOut className="text-base" />
@@ -145,49 +199,27 @@ const Header = () => {
     <header className="bg-[var(--app-surface)] shadow-md">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between py-4">
-          <Link to="/" className="text-2xl font-bold text-[var(--app-accent)] font-serif">
-            RestaurantManager
+          <Link to="/" className="flex items-center gap-3">
+            <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-9 w-9 rounded-full object-cover" />
+            <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
           </Link>
 
           <nav className="hidden items-center space-x-6 md:flex">
-            {isAuthenticated && (
-              <>
-                <Link
-                  to="/"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname === '/' ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Home
-                </Link>
-                <Link
-                  to="/menu"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    ['/menu', '/orders', '/profile'].some((path) => location.pathname.startsWith(path))
-                      ? 'font-semibold text-[var(--app-accent)]'
-                      : ''
-                  }`}
-                >
-                  Menu
-                </Link>
-                <Link
-                  to="/schedule"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname.startsWith('/schedule') ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Schedule
-                </Link>
-                <Link
-                  to="/analytics"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname.startsWith('/analytics') ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Analytics
-                </Link>
-              </>
-            )}
+            {isAuthenticated &&
+              navItems.map((item) => {
+                const active = item.isActive ? item.isActive(location.pathname) : location.pathname === item.to;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
+                      active ? 'font-semibold text-[var(--app-accent)]' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
 
             <button
               onClick={toggleDarkMode}
@@ -199,7 +231,7 @@ const Header = () => {
 
             {isAuthenticated ? (
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
               >
                 Logout
@@ -221,20 +253,18 @@ const Header = () => {
             <div className="flex flex-col space-y-4">
               {isAuthenticated ? (
                 <>
-                  <Link to="/" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Home
-                  </Link>
-                  <Link to="/menu" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Menu
-                  </Link>
-                  <Link to="/schedule" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Schedule
-                  </Link>
-                  <Link to="/analytics" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Analytics
-                  </Link>
+                  {navItems.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="text-[var(--app-text)] hover:text-[var(--app-accent)]"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
                   <button
-                    onClick={logout}
+                    onClick={handleLogout}
                     className="text-left text-[var(--app-text)] hover:text-[var(--app-accent)]"
                   >
                     Logout

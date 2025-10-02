@@ -16,6 +16,19 @@ from typing import Optional, List, Dict, Any
 ROOT = os.path.dirname(__file__)
 DB = os.environ.get('DB_PATH', os.path.join(ROOT, 'data', 'app.db'))
 
+CAT_IMAGES = {
+    'alice.admin@example.com': 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?auto=format&fit=crop&w=400&q=80',
+    'maya.manager@example.com': 'https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80',
+    'sam.staff@example.com': 'https://images.unsplash.com/photo-1494256997604-768d1f608cac?auto=format&fit=crop&w=400&q=80',
+    'tina.staff@example.com': 'https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&w=400&q=80',
+    'raj.staff@example.com': 'https://images.unsplash.com/photo-1460904577954-8fadb262612c?auto=format&fit=crop&w=400&q=80',
+    'user1@example.com': 'https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=400&q=80',
+    'user2@example.com': 'https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?auto=format&fit=crop&w=400&q=80',
+    'user3@example.com': 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=400&q=80',
+    'user4@example.com': 'https://images.unsplash.com/photo-1472491235688-bdc81a63246e?auto=format&fit=crop&w=400&q=80',
+    'user5@example.com': 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?auto=format&fit=crop&w=400&q=80',
+}
+
 
 def _column_exists(cur: sqlite3.Cursor, table: str, column: str) -> bool:
     cur.execute(f"PRAGMA table_info({table})")
@@ -132,6 +145,27 @@ def cleanup_legacy_schedule_data(conn: sqlite3.Connection) -> None:
     cur.execute("DELETE FROM shift_assignments WHERE start_time IS NULL OR start_time = '' OR end_time IS NULL OR end_time = ''")
     conn.commit()
 
+
+def reset_database(conn: sqlite3.Connection) -> None:
+    """Clear dynamic tables so reseeding always starts from a clean slate."""
+    cur = conn.cursor()
+    print('Resetting tables: order_items, orders, staff_availability, shift_assignments, shifts, users')
+    cur.execute('PRAGMA foreign_keys = OFF')
+    tables = [
+        'order_items',
+        'orders',
+        'staff_availability',
+        'shift_assignments',
+        'shifts',
+        'users',
+    ]
+    for table in tables:
+        cur.execute(f'DELETE FROM {table}')
+    placeholders = ','.join('?' for _ in tables)
+    cur.execute(f'DELETE FROM sqlite_sequence WHERE name IN ({placeholders})', tables)
+    cur.execute('PRAGMA foreign_keys = ON')
+    conn.commit()
+
 def seed_users(conn):
     cur = conn.cursor()
     # Determine role ids
@@ -155,14 +189,31 @@ def seed_users(conn):
     # Prefer secure password for seeded users (password: 'password')
     from utils import hash_password
     for u in users:
-        cur.execute('SELECT id FROM users WHERE email=?', (u['email'],))
-        if cur.fetchone():
-            print('User exists, skipping:', u['email'])
+        email = u.get('email')
+        u['profile_pic'] = CAT_IMAGES.get(email) if email else None
+    for u in users:
+        cur.execute('SELECT id, profile_pic, title FROM users WHERE email=?', (u['email'],))
+        row = cur.fetchone()
+        if row:
+            updates = []
+            params: List[Any] = []
+            if u.get('profile_pic') and row[1] != u['profile_pic']:
+                updates.append('profile_pic=?')
+                params.append(u['profile_pic'])
+            if u.get('title') and row[2] != u['title']:
+                updates.append('title=?')
+                params.append(u['title'])
+            if updates:
+                params.append(u['email'])
+                cur.execute(f"UPDATE users SET {', '.join(updates)} WHERE email=?", params)
+                print('User exists, updating profile:', u['email'])
+            else:
+                print('User exists, skipping:', u['email'])
             continue
         role_id = role_map.get(u['role'])
         pw_hash = hash_password('password')
-        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date,password_hash) VALUES (?,?,?,?,?,?,?,?)', (
-            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow(), pw_hash
+        cur.execute('INSERT INTO users (first_name,last_name,email,phone_number,role_id,title,signup_date,password_hash,profile_pic) VALUES (?,?,?,?,?,?,?,?,?)', (
+            u['first_name'], u['last_name'], u['email'], u['phone_number'], role_id, u['title'], datetime.utcnow(), pw_hash, u.get('profile_pic')
         ))
         print('Inserted user:', u['email'])
     conn.commit()
@@ -193,17 +244,17 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         {
             'name': 'Morning Prep',
             'role_required': 'Kitchen',
-            'start_time': '07:00',
-            'end_time': '11:00',
-            'default_duration': 240,
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
         },
         {
             'name': 'Lunch Service',
             'role_required': 'Server',
-            'start_time': '11:00',
-            'end_time': '16:00',
-            'default_duration': 300,
+            'start_time': '12:00',
+            'end_time': '18:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
         },
         {
@@ -217,9 +268,9 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         {
             'name': 'Closing Shift',
             'role_required': 'Support',
-            'start_time': '20:00',
-            'end_time': '23:00',
-            'default_duration': 180,
+            'start_time': '14:00',
+            'end_time': '20:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=FR,SA',
         },
     ]
@@ -229,7 +280,21 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         cur.execute('SELECT id FROM shifts WHERE name=?', (template['name'],))
         row = cur.fetchone()
         if row:
+            cur.execute(
+                'UPDATE shifts SET role_required=?, start_time=?, end_time=?, created_by=?, recurrence_rule=?, default_status=?, default_duration=? WHERE id=?',
+                (
+                    template['role_required'],
+                    template['start_time'],
+                    template['end_time'],
+                    admin_id,
+                    template['recurrence_rule'],
+                    'scheduled',
+                    template['default_duration'],
+                    row[0],
+                ),
+            )
             name_to_id[template['name']] = row[0]
+            print('Updated shift template:', template['name'])
             continue
         cur.execute(
             'INSERT INTO shifts (name, role_required, start_time, end_time, created_by, recurrence_rule, default_status, default_duration)\n'
@@ -268,6 +333,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
     ensure_shift_schema(conn)
     cur = conn.cursor()
 
+    cur.execute('DELETE FROM shift_assignments')
+
     staff_emails = [
         'maya.manager@example.com',
         'sam.staff@example.com',
@@ -277,181 +344,157 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
     user_map = _lookup_user_ids(conn, staff_emails)
 
     current_week_start = _start_of_week()
-    previous_week_start = current_week_start - timedelta(weeks=1)
+    week_offsets = [-2, -1, 0, 1]
+    window_start = current_week_start + timedelta(weeks=min(week_offsets))
+    window_end = current_week_start + timedelta(weeks=max(week_offsets), days=6)
+    print('Regenerating shift assignments from', window_start, 'through', window_end)
 
-    # Remove any assignments within the two-week window so reseeding is deterministic even if
-    # older rows were missing schedule_week_start values.
-    window_start = previous_week_start
-    window_end = current_week_start + timedelta(days=6)
-    cur.execute(
-        'DELETE FROM shift_assignments WHERE shift_date BETWEEN ? AND ?',
-        (window_start.isoformat(), window_end.isoformat()),
-    )
-    cur.execute(
-        'DELETE FROM shift_assignments WHERE schedule_week_start IN (?, ?)',
-        (previous_week_start.isoformat(), current_week_start.isoformat()),
-    )
-    print('Regenerating shift assignments for weeks starting', previous_week_start, 'and', current_week_start)
-
-    weekly_templates: List[Dict[str, Any]] = [
+    base_items: List[Dict[str, Any]] = [
         {
-            'label': 'Previous week mix of statuses',
-            'week_start': previous_week_start,
-            'items': [
-                {
-                    'shift': 'Morning Prep',
-                    'staff_email': 'tina.staff@example.com',
-                    'day_offset': 0,
-                    'start_time': '07:00',
-                    'end_time': '11:00',
-                    'role': 'Kitchen',
-                    'status': 'confirmed',
-                    'notes': 'Prepped breakfast menu and cold stations',
-                },
-                {
-                    'shift': 'Lunch Service',
-                    'staff_email': 'sam.staff@example.com',
-                    'day_offset': 0,
-                    'start_time': '11:30',
-                    'end_time': '16:00',
-                    'role': 'Server',
-                    'status': 'scheduled',
-                    'notes': 'Handled patio and bar seating',
-                },
-                {
-                    'shift': 'Dinner Service',
-                    'staff_email': 'raj.staff@example.com',
-                    'day_offset': 2,
-                    'start_time': '16:00',
-                    'end_time': '22:00',
-                    'role': 'Server',
-                    'status': 'pending',
-                    'notes': 'Swap requested, awaiting confirmation',
-                },
-                {
-                    'shift': 'Lunch Service',
-                    'staff_email': None,
-                    'day_offset': 3,
-                    'start_time': '12:00',
-                    'end_time': '15:00',
-                    'role': 'Server',
-                    'status': 'open',
-                    'notes': 'Need extra set of hands for event group',
-                },
-                {
-                    'shift': 'Dinner Service',
-                    'staff_email': 'sam.staff@example.com',
-                    'day_offset': 5,
-                    'start_time': '17:00',
-                    'end_time': '22:00',
-                    'role': 'Server',
-                    'status': 'scheduled',
-                    'notes': 'Covering main dining room rotation',
-                },
-                {
-                    'shift': 'Closing Shift',
-                    'staff_email': 'maya.manager@example.com',
-                    'day_offset': 6,
-                    'start_time': '20:00',
-                    'end_time': '23:00',
-                    'role': 'Support',
-                    'status': 'confirmed',
-                    'notes': 'Weekly inventory sign-off and vendor notes',
-                },
+            'shift': 'Morning Prep',
+            'staff_email': 'tina.staff@example.com',
+            'day_offset': 0,
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'role': 'Kitchen',
+            'note_variants': [
+                'Seasonal soup and pastry prep',
+                'Supplier tasting mise en place',
+                'Brunch buffet mise en place',
+                'Chef tasting menu prep',
             ],
         },
         {
-            'label': 'Current week coverage snapshot',
-            'week_start': current_week_start,
-            'items': [
-                {
-                    'shift': 'Morning Prep',
-                    'staff_email': 'tina.staff@example.com',
-                    'day_offset': 0,
-                    'start_time': '06:30',
-                    'end_time': '10:30',
-                    'role': 'Kitchen',
-                    'status': 'confirmed',
-                    'notes': 'Seasonal soups and pastry prep',
-                },
-                {
-                    'shift': 'Lunch Service',
-                    'staff_email': 'sam.staff@example.com',
-                    'day_offset': 1,
-                    'start_time': '11:00',
-                    'end_time': '15:30',
-                    'role': 'Server',
-                    'status': 'scheduled',
-                    'notes': 'Corporate luncheon coverage',
-                },
-                {
-                    'shift': 'Dinner Service',
-                    'staff_email': 'raj.staff@example.com',
-                    'day_offset': 2,
-                    'start_time': '16:00',
-                    'end_time': '22:00',
-                    'role': 'Server',
-                    'status': 'pending',
-                    'notes': 'Awaiting childcare confirmation',
-                },
-                {
-                    'shift': 'Lunch Service',
-                    'staff_email': None,
-                    'day_offset': 3,
-                    'start_time': '12:30',
-                    'end_time': '16:00',
-                    'role': 'Server',
-                    'status': 'open',
-                    'notes': 'Community tasting event support',
-                },
-                {
-                    'shift': 'Dinner Service',
-                    'staff_email': 'sam.staff@example.com',
-                    'day_offset': 4,
-                    'start_time': '17:00',
-                    'end_time': '22:00',
-                    'role': 'Server',
-                    'status': 'scheduled',
-                    'notes': 'High-volume reservation block',
-                },
-                {
-                    'shift': 'Morning Prep',
-                    'staff_email': 'tina.staff@example.com',
-                    'day_offset': 5,
-                    'start_time': '07:00',
-                    'end_time': '11:00',
-                    'role': 'Kitchen',
-                    'status': 'confirmed',
-                    'notes': 'Weekend brunch mise en place',
-                },
-                {
-                    'shift': 'Closing Shift',
-                    'staff_email': 'maya.manager@example.com',
-                    'day_offset': 6,
-                    'start_time': '20:00',
-                    'end_time': '23:00',
-                    'role': 'Support',
-                    'status': 'confirmed',
-                    'notes': 'Close-out audit and maintenance check',
-                },
+            'shift': 'Lunch Service',
+            'staff_email': 'sam.staff@example.com',
+            'day_offset': 0,
+            'start_time': '12:00',
+            'end_time': '18:00',
+            'role': 'Server',
+            'note_variants': [
+                'Corporate group reservations',
+                'Tour bus drop-in block',
+                'Local office luncheon',
+                'Convention mid-day crowd',
+            ],
+        },
+        {
+            'shift': 'Dinner Service',
+            'staff_email': 'raj.staff@example.com',
+            'day_offset': 2,
+            'start_time': '16:00',
+            'end_time': '22:00',
+            'role': 'Server',
+            'note_variants': [
+                'Wine pairing dinner service',
+                'Family reunion seating',
+                'Neighborhood loyalty night',
+                'Date-night prix fixe',
+            ],
+        },
+        {
+            'shift': 'Lunch Service',
+            'staff_email': 'sam.staff@example.com',
+            'day_offset': 3,
+            'start_time': '11:00',
+            'end_time': '17:00',
+            'role': 'Server',
+            'note_variants': [
+                'Extra coverage for tasting event',
+                'Back patio private party',
+                'Catering pickup staging',
+                'Team training overlap',
+            ],
+        },
+        {
+            'shift': 'Closing Shift',
+            'staff_email': 'maya.manager@example.com',
+            'day_offset': 4,
+            'start_time': '14:00',
+            'end_time': '20:00',
+            'role': 'Support',
+            'note_variants': [
+                'Front-of-house inventory sync',
+                'Weekly vendor coordination window',
+                'Service standards refresher',
+                'Guest feedback follow-up calls',
+            ],
+        },
+        {
+            'shift': 'Morning Prep',
+            'staff_email': 'tina.staff@example.com',
+            'day_offset': 5,
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'role': 'Kitchen',
+            'note_variants': [
+                'Weekend brunch mise en place',
+                'Farmer market produce prep',
+                'Holiday brunch prep list',
+                'Seafood delivery breakdown',
+            ],
+        },
+        {
+            'shift': 'Dinner Service',
+            'staff_email': 'raj.staff@example.com',
+            'day_offset': 5,
+            'start_time': '16:00',
+            'end_time': '22:00',
+            'role': 'Server',
+            'note_variants': [
+                'Saturday night double seating',
+                'Sommelier pairing support',
+                'VIP lounge rotation',
+                'Tasting menu support',
+            ],
+        },
+        {
+            'shift': 'Closing Shift',
+            'staff_email': 'maya.manager@example.com',
+            'day_offset': 6,
+            'start_time': '14:00',
+            'end_time': '20:00',
+            'role': 'Support',
+            'note_variants': [
+                'Inventory audit and vendor notes',
+                'Weekly maintenance checklist',
+                'Month-end cash audit',
+                'Policy review with closers',
             ],
         },
     ]
 
+    status_patterns = [
+        ['confirmed', 'scheduled', 'pending', 'open', 'scheduled', 'confirmed', 'scheduled', 'confirmed'],
+        ['confirmed', 'confirmed', 'scheduled', 'open', 'pending', 'confirmed', 'pending', 'confirmed'],
+        ['scheduled', 'scheduled', 'pending', 'open', 'confirmed', 'confirmed', 'scheduled', 'confirmed'],
+        ['confirmed', 'scheduled', 'open', 'open', 'scheduled', 'confirmed', 'scheduled', 'confirmed'],
+    ]
+
     now_iso = datetime.utcnow().isoformat()
-    for template in weekly_templates:
-        for item in template['items']:
-            shift_id = shift_ids.get(item['shift'])
+    for week_index, offset in enumerate(week_offsets):
+        week_start = current_week_start + timedelta(weeks=offset)
+        week_label = f"Week of {week_start.strftime('%b %d')}"
+        statuses = status_patterns[week_index % len(status_patterns)]
+
+        for item_index, base in enumerate(base_items):
+            status = statuses[item_index % len(statuses)]
+            shift_id = shift_ids.get(base['shift'])
             if not shift_id:
                 continue
 
-            shift_date = template['week_start'] + timedelta(days=item['day_offset'])
-            start_iso = _combine_iso(shift_date, item['start_time'])
-            end_iso = _combine_iso(shift_date, item['end_time'])
-            assigned_user = user_map.get(item['staff_email']) if item['staff_email'] else None
+            shift_date = week_start + timedelta(days=base['day_offset'])
+            start_iso = _combine_iso(shift_date, base['start_time'])
+            end_iso = _combine_iso(shift_date, base['end_time'])
+            assigned_email = base['staff_email'] if status != 'open' else None
+            assigned_user = user_map.get(assigned_email) if assigned_email else None
+
+            note_variants = base['note_variants']
+            note_text = note_variants[(week_index + item_index) % len(note_variants)]
+            note = f"{week_label} • {note_text}"
 
             cur.execute(
-                'INSERT INTO shift_assignments (shift_id, assigned_user, shift_date, start_time, end_time, role, status, notes, schedule_week_start, created_at, updated_at)\n'
+                'INSERT INTO shift_assignments (shift_id, assigned_user, shift_date, start_time, end_time, role, status, notes, schedule_week_start, created_at, updated_at) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (
                     shift_id,
@@ -459,15 +502,15 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
                     shift_date.isoformat(),
                     start_iso,
                     end_iso,
-                    item['role'],
-                    item['status'],
-                    item['notes'],
-                    template['week_start'].isoformat(),
+                    base['role'],
+                    status,
+                    note,
+                    week_start.isoformat(),
                     now_iso,
                     now_iso,
                 ),
             )
-            print('Inserted shift assignment:', template['label'], shift_date, '->', item['status'])
+            print('Inserted shift assignment:', week_label, shift_date, '->', status)
 
     conn.commit()
 
@@ -510,84 +553,90 @@ def seed_menu_items(conn):
     # Get type ids
     cur.execute('SELECT id, name FROM types')
     types = [r[0] for r in cur.fetchall()]
+    # Reset existing items to ensure we always seed the curated collection
+    print('Clearing existing menu items to reseed curated offerings')
+    cur.execute('DELETE FROM menu_items')
+
     sample_items = [
-        ('Spring Rolls', 5.5, 'Crispy spring rolls', 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80', 10),
-        ('Beef Burger', 9.5, 'Grilled beef burger', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=800&q=80', 8),
-        ('Cheesecake', 6.0, 'Creamy cheesecake', 'https://images.unsplash.com/photo-1505253758473-96b7015fcd40?auto=format&fit=crop&w=800&q=80', 6),
-        ('Lemonade', 3.0, 'Fresh lemonade', 'https://images.unsplash.com/photo-1558640472-9d2a7deb7f62?auto=format&fit=crop&w=800&q=80', 20),
-        ('Caesar Salad', 7.0, 'Fresh greens', 'https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80', 12),
-        ('Grilled Salmon', 14.5, 'Served with veggies', 'https://images.unsplash.com/photo-1514516345957-556ca7d90aaf?auto=format&fit=crop&w=800&q=80', 5),
-        ('Chocolate Mousse', 5.5, 'Rich chocolate mousse', 'https://images.unsplash.com/photo-1488900128323-21503983a07e?auto=format&fit=crop&w=800&q=80', 7),
-        ('Iced Tea', 2.5, 'Brewed iced tea', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 15),
-        ('Spaghetti', 10.0, 'Pasta with tomato sauce', 'https://images.unsplash.com/photo-1525755662778-989d0524087e?auto=format&fit=crop&w=800&q=80', 9),
-        ('Garlic Bread', 3.5, 'Toasted garlic bread', 'https://images.unsplash.com/photo-1604908178086-d1a112d7e1bd?auto=format&fit=crop&w=800&q=80', 11)
+        ('Heirloom Burrata Salad', 12.5, 'Heirloom tomatoes, burrata, basil oil, balsamic pearls', 'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=1200&q=80', 18),
+        ('Housemade Mushroom Tagliatelle', 18.0, 'Hand-cut pasta, wild mushrooms, parmesan cream', 'https://images.unsplash.com/photo-1525755662778-989d0524087e?auto=format&fit=crop&w=1200&q=80', 20),
+        ('Herb-Crusted Salmon', 21.0, 'Pan-seared salmon with lemon beurre blanc and asparagus', 'https://images.unsplash.com/photo-1514516345957-556ca7d90aaf?auto=format&fit=crop&w=1200&q=80', 12),
+        ('Wood-Fired Margherita Pizza', 15.0, 'San Marzano tomatoes, fresh mozzarella, basil', 'https://images.unsplash.com/photo-1548365328-96c4a0899736?auto=format&fit=crop&w=1200&q=80', 20),
+        ('Smoked Brisket Sliders', 13.5, 'House-smoked brisket, pickled onions, brioche buns', 'https://images.unsplash.com/photo-1540396890193-eb385829f230?auto=format&fit=crop&w=1200&q=80', 24),
+        ('Lobster Bisque', 11.0, 'Silky bisque finished with cognac cream and chive oil', 'https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=1200&q=80', 16),
+        ('Seared Scallops', 23.0, 'Butternut puree, crispy prosciutto, brown butter crumble', 'https://images.unsplash.com/photo-1543353071-10c8ba85a904?auto=format&fit=crop&w=1200&q=80', 10),
+        ('Seasonal Roasted Vegetables', 9.0, 'Charred broccolini, rainbow carrots, smoked almonds', 'https://images.unsplash.com/photo-1604908815795-01f72b5f52ff?auto=format&fit=crop&w=1200&q=80', 22),
+        ('Passionfruit Pavlova', 9.5, 'Crisp meringue, vanilla chantilly, fresh passionfruit', 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=1200&q=80', 15),
+        ('Tiramisu Affogato', 8.0, 'Espresso-soaked ladyfingers, mascarpone cream, espresso shot', 'https://images.unsplash.com/photo-1506443432602-ac2fcd6f54e1?auto=format&fit=crop&w=1200&q=80', 17),
+        ('Citrus Spritz Mocktail', 6.5, 'Blood orange, grapefruit, rosemary, sparkling water', 'https://images.unsplash.com/photo-1613470207930-3e9958f55d2c?auto=format&fit=crop&w=1200&q=80', 30),
     ]
 
-    # Insert only if name not present
     for name, price, desc, img, qty in sample_items:
-        cur.execute('SELECT id FROM menu_items WHERE name=?', (name,))
-        if cur.fetchone():
-            print('Menu item exists, skipping:', name)
-            continue
         type_id = random.choice(types) if types else None
-        cur.execute('INSERT INTO menu_items (name,price,description,img_link,qty_left,type_id,discount) VALUES (?,?,?,?,?,?,?)', (
-            name, price, desc, img, qty, type_id, 0
-        ))
+        cur.execute(
+            'INSERT INTO menu_items (name,price,description,img_link,qty_left,type_id,discount) VALUES (?,?,?,?,?,?,?)',
+            (name, price, desc, img, qty, type_id, 0),
+        )
         print('Inserted menu item:', name)
     conn.commit()
 
 
 def seed_orders(conn):
     cur = conn.cursor()
-    # Get user ids for customers (role 'User')
     cur.execute("SELECT id FROM roles WHERE name='User'")
     row = cur.fetchone()
     user_role_id = row[0] if row else None
-    cur.execute('SELECT id FROM users WHERE role_id=?', (user_role_id,))
+    cur.execute('SELECT id FROM users WHERE role_id=? ORDER BY id', (user_role_id,))
     user_ids = [r[0] for r in cur.fetchall()]
 
-    # Get all menu item ids
-    cur.execute('SELECT id FROM menu_items')
+    cur.execute('SELECT id FROM menu_items ORDER BY id')
     item_ids = [r[0] for r in cur.fetchall()]
     if not user_ids or not item_ids:
         print('No users or menu items to create orders')
         return
 
-    # Create one order per user (or up to 5), but only if that user has no orders yet
-    orders_to_create = user_ids[:5]
-    extra = 2
-    for uid in orders_to_create:
-        # skip if user already has an order
-        cur.execute('SELECT id FROM orders WHERE member_id=? LIMIT 1', (uid,))
-        if cur.fetchone():
-            print(f'User {uid} already has order, skipping')
-            continue
-        ts = datetime.utcnow() - timedelta(days=random.randint(0,7), hours=random.randint(0,23))
-        cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, ts))
-        order_id = cur.lastrowid
-        # add 1-3 items per order and store as JSON array in order_items table
-        items = []
-        for _ in range(random.randint(1,3)):
-            item = random.choice(item_ids)
-            qty = random.randint(1,3)
-            items.append({'item_id': item, 'qty': qty})
-        cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+    now = datetime.utcnow()
+    base_time = now.replace(hour=11, minute=30, second=0, microsecond=0)
+    week_offsets = [-3, -2, -1, 0]
+    created_orders = 0
 
-    # extra orders by random users
-    for _ in range(extra):
-        uid = random.choice(user_ids)
-        ts = datetime.utcnow() - timedelta(days=random.randint(0,7), hours=random.randint(0,23))
-        cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, ts))
-        order_id = cur.lastrowid
-        items = []
-        for _ in range(random.randint(1,3)):
-            item = random.choice(item_ids)
-            qty = random.randint(1,4)
-            items.append({'item_id': item, 'qty': qty})
-        cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+    def build_items(seed_index: int) -> List[Dict[str, int]]:
+        selections: List[Dict[str, int]] = []
+        for offset in range(2):
+            item_id = item_ids[(seed_index + offset) % len(item_ids)]
+            quantity = (seed_index + offset) % 3 + 1
+            selections.append({'item_id': item_id, 'qty': quantity})
+        if seed_index % 2 == 0 and len(item_ids) > 2:
+            item_id = item_ids[(seed_index + 2) % len(item_ids)]
+            selections.append({'item_id': item_id, 'qty': 1})
+        return selections
+
+    for user_index, uid in enumerate(user_ids[:5]):
+        for week_index, offset in enumerate(week_offsets):
+            order_time = base_time + timedelta(weeks=offset, days=user_index % 3, hours=week_index * 2)
+            if order_time > now:
+                continue
+            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
+            order_id = cur.lastrowid
+            items = build_items(user_index + week_index)
+            cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+            created_orders += 1
+
+    weekend_users = user_ids[:3] if len(user_ids) >= 3 else user_ids
+    for week_index, offset in enumerate(week_offsets):
+        for uid in weekend_users:
+            order_time = base_time + timedelta(weeks=offset, days=5, hours=18 + week_index)
+            if order_time > now:
+                continue
+            cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
+            order_id = cur.lastrowid
+            seed_index = (uid + week_index) % len(item_ids)
+            items = build_items(seed_index)
+            cur.execute('INSERT OR REPLACE INTO order_items (order_id, items) VALUES (?,?)', (order_id, json.dumps(items)))
+            created_orders += 1
 
     conn.commit()
-    print('Seeded orders and order_items')
+    print(f'Seeded {created_orders} orders spanning {len(week_offsets)} weeks')
 
 def main():
     if not os.path.exists(DB):
@@ -599,6 +648,7 @@ def main():
     ensure_roles(conn)
     ensure_shift_schema(conn)
     cleanup_legacy_schedule_data(conn)
+    reset_database(conn)
     update_missing_passwords(conn)
     seed_users(conn)
     shift_ids = seed_shift_templates(conn)

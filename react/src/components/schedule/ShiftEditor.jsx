@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
-import { statusOptions, toDateInputValue, toTimeInputValue, startOfWeek } from './scheduleHelpers';
-
-const defaultTimes = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '16:00', '18:00', '20:00'];
+import {
+  generateWorkingTimeOptions,
+  statusOptions,
+  timeStringToMinutes,
+  toDateInputValue,
+  toTimeInputValue,
+  startOfWeek,
+  WORKING_DAY_END_MINUTES,
+  WORKING_DAY_START_MINUTES,
+  MIN_SHIFT_DURATION_MINUTES,
+} from './scheduleHelpers';
 
 const emptyForm = (weekStart) => ({
   shift_date: toDateInputValue(weekStart || startOfWeek(new Date())),
@@ -14,16 +22,6 @@ const emptyForm = (weekStart) => ({
   notes: '',
   repeat_weeks: 0,
 });
-
-const timeOptions = () => {
-  const base = [];
-  for (let hour = 6; hour <= 23; hour++) {
-    const h = String(hour).padStart(2, '0');
-    base.push(`${h}:00`);
-    base.push(`${h}:30`);
-  }
-  return Array.from(new Set([...defaultTimes, ...base]));
-};
 
 const staffLabel = (staff) => {
   if (!staff) return 'Unassigned';
@@ -37,6 +35,7 @@ export default function ShiftEditor({
   initialShift,
   defaultDate,
   staffOptions = [],
+  availabilityByDate = {},
   onSave,
   onDelete,
   onClose,
@@ -45,15 +44,17 @@ export default function ShiftEditor({
   error,
 }) {
   const [form, setForm] = useState(() => emptyForm(weekStart));
+  const [localError, setLocalError] = useState('');
 
   useEffect(() => {
     if (!open) {
       setForm(emptyForm(weekStart));
+      setLocalError('');
       return;
     }
     if (mode === 'edit' && initialShift) {
       setForm({
-        shift_date: initialShift.shift_date || '',
+        shift_date: toDateInputValue(initialShift.shift_date || initialShift.start || initialShift.date),
         start_time: toTimeInputValue(initialShift.start),
         end_time: toTimeInputValue(initialShift.end || initialShift.start),
         staff_id: initialShift.staff_id ? String(initialShift.staff_id) : '',
@@ -67,15 +68,55 @@ export default function ShiftEditor({
       template.shift_date = defaultDate ? toDateInputValue(defaultDate) : template.shift_date;
       setForm(template);
     }
+    setLocalError('');
   }, [open, mode, initialShift, defaultDate, weekStart]);
+
+  useEffect(() => {
+    if (error) {
+      setLocalError('');
+    }
+  }, [error]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    if (localError) {
+      setLocalError('');
+    }
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    const startMinutes = timeStringToMinutes(form.start_time);
+    const endMinutes = timeStringToMinutes(form.end_time);
+
+    if ([startMinutes, endMinutes].some((value) => Number.isNaN(value))) {
+      setLocalError('Select valid start and end times between 9:00 AM and 10:00 PM.');
+      return;
+    }
+
+    if (startMinutes < WORKING_DAY_START_MINUTES || startMinutes >= WORKING_DAY_END_MINUTES) {
+      setLocalError('Shifts must start between 9:00 AM and 10:00 PM.');
+      return;
+    }
+
+    if (endMinutes <= WORKING_DAY_START_MINUTES || endMinutes > WORKING_DAY_END_MINUTES) {
+      setLocalError('Shifts must end between 9:00 AM and 10:00 PM.');
+      return;
+    }
+
+    if (endMinutes <= startMinutes) {
+      setLocalError('End time must be later than the start time.');
+      return;
+    }
+
+    if (endMinutes - startMinutes < MIN_SHIFT_DURATION_MINUTES) {
+      setLocalError('Shifts must be at least 6 hours long.');
+      return;
+    }
+
+    setLocalError('');
+
     if (typeof onSave === 'function') {
       const payload = {
         ...form,
@@ -87,14 +128,98 @@ export default function ShiftEditor({
   };
 
   const isEdit = mode === 'edit' && initialShift;
-  const times = useMemo(() => timeOptions(), []);
+  const workingTimes = useMemo(() => generateWorkingTimeOptions(30), []);
+  const startTimeOptions = useMemo(() => workingTimes.slice(0, -1), [workingTimes]);
+  const endTimeOptions = workingTimes;
+  const normalizedStartOptions = useMemo(() => {
+    if (!form.start_time || startTimeOptions.includes(form.start_time)) return startTimeOptions;
+    return [...startTimeOptions, form.start_time].sort();
+  }, [form.start_time, startTimeOptions]);
+  const normalizedEndOptions = useMemo(() => {
+    if (!form.end_time || endTimeOptions.includes(form.end_time)) return endTimeOptions;
+    return [...endTimeOptions, form.end_time].sort();
+  }, [form.end_time, endTimeOptions]);
   const statuses = statusOptions();
+
+  const staffList = useMemo(() => {
+    return Array.isArray(staffOptions) ? staffOptions : [];
+  }, [staffOptions]);
+
+  const availabilityLookup = useMemo(() => {
+    const map = new Map();
+    if (!availabilityByDate || typeof availabilityByDate !== 'object') {
+      return map;
+    }
+    let entries;
+    if (Array.isArray(availabilityByDate)) {
+      entries = availabilityByDate;
+    } else if (availabilityByDate instanceof Map) {
+      entries = Array.from(availabilityByDate.entries());
+    } else {
+      entries = Object.entries(availabilityByDate);
+    }
+
+    entries.forEach((entry) => {
+      let dateKey;
+      let raw;
+
+      if (Array.isArray(entry) && entry.length === 2) {
+        [dateKey, raw] = entry;
+      } else if (entry && typeof entry === 'object') {
+        dateKey = entry.date || entry[0];
+        raw = entry.unavailable || entry.value || entry[1];
+      } else {
+        return;
+      }
+
+      if (!dateKey) return;
+      let source = raw;
+      if (source && typeof source === 'object' && !Array.isArray(source) && Array.isArray(source.unavailable)) {
+        source = source.unavailable;
+      }
+      const tokens = Array.isArray(source) ? source : [];
+      const normalized = new Set(
+        tokens
+          .map((token) => {
+            if (token === null || token === undefined) return '';
+            return String(token);
+          })
+          .filter((token) => token !== '')
+      );
+      map.set(dateKey, normalized);
+    });
+    return map;
+  }, [availabilityByDate]);
+
+  const activeDateKey = form.shift_date || '';
+  const unavailableSet = availabilityLookup.get(activeDateKey);
+  const isStaffSelectDisabled = !activeDateKey;
+  const availableStaffCount = !isStaffSelectDisabled
+    ? staffList.filter((staff) => {
+        const idToken = staff?.id !== null && staff?.id !== undefined ? String(staff.id) : '';
+        if (!idToken) return false;
+        if (!unavailableSet) return true;
+        return !unavailableSet.has(idToken);
+      }).length
+    : 0;
+
+  const combinedError = localError || error;
+
+  useEffect(() => {
+    if (!open) return;
+    if (!activeDateKey || !form.staff_id || !unavailableSet) return;
+    const token = String(form.staff_id);
+    if (unavailableSet.has(token)) {
+      setForm((prev) => ({ ...prev, staff_id: '' }));
+      setLocalError((prev) => prev || 'Selected team member is unavailable on that date. Please choose another.');
+    }
+  }, [open, activeDateKey, form.staff_id, unavailableSet]);
 
   if (!open) return null;
 
   const labelClass = 'flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]';
   const controlClass =
-    'rounded-2xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]';
+    'rounded-2xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)] disabled:cursor-not-allowed disabled:opacity-60';
 
   const handleBackdropClick = (event) => {
     if (event.target === event.currentTarget && typeof onClose === 'function') {
@@ -151,14 +276,27 @@ export default function ShiftEditor({
                     value={form.staff_id}
                     onChange={handleChange}
                     className={controlClass}
+                    disabled={isStaffSelectDisabled}
+                    title={isStaffSelectDisabled ? 'Select a shift date first' : undefined}
                   >
                     <option value="">Unassigned shift</option>
-                    {staffOptions.map((staff) => (
-                      <option key={staff.id} value={staff.id}>
-                        {staffLabel(staff)}
-                      </option>
-                    ))}
+                    {staffList.map((staff) => {
+                      const idToken = staff?.id !== null && staff?.id !== undefined ? String(staff.id) : '';
+                      if (!idToken) return null;
+                      const isUnavailable = !isStaffSelectDisabled && unavailableSet?.has(idToken);
+                      return (
+                        <option key={idToken} value={idToken} disabled={isStaffSelectDisabled || isUnavailable}>
+                          {staffLabel(staff)}
+                          {isUnavailable ? ' (Unavailable)' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {isStaffSelectDisabled ? (
+                    <p className="text-xs text-[var(--app-muted)]">Select a shift date to choose available team members.</p>
+                  ) : !availableStaffCount && staffList.length ? (
+                    <p className="text-xs text-[var(--app-warning)]">No team members are marked available for this date. You can leave the shift unassigned.</p>
+                  ) : null}
                 </label>
               </div>
 
@@ -172,7 +310,7 @@ export default function ShiftEditor({
                     className={controlClass}
                     required
                   >
-                    {times.map((time) => (
+                    {normalizedStartOptions.map((time) => (
                       <option key={`start-${time}`} value={time}>
                         {time}
                       </option>
@@ -188,7 +326,7 @@ export default function ShiftEditor({
                     className={controlClass}
                     required
                   >
-                    {times.map((time) => (
+                    {normalizedEndOptions.map((time) => (
                       <option key={`end-${time}`} value={time}>
                         {time}
                       </option>
@@ -255,9 +393,9 @@ export default function ShiftEditor({
                 </label>
               ) : null}
 
-              {error ? (
+              {combinedError ? (
                 <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_45%,_transparent_55%)] bg-[color-mix(in_srgb,var(--app-warning)_12%,_var(--app-surface)_88%)] px-4 py-3 text-sm text-[var(--app-warning)]">
-                  {error}
+                  {combinedError}
                 </div>
               ) : null}
             </div>

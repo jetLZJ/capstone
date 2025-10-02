@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FiBarChart2,
   FiChevronDown,
@@ -7,8 +7,10 @@ import {
   FiTrendingUp,
   FiSmile,
   FiUsers,
+  FiDownload,
 } from 'react-icons/fi';
 import useAuth from '../../hooks/useAuth';
+import { toast } from 'react-toastify';
 
 const timeframeOptions = [
   { value: 'this_week', label: 'This Week' },
@@ -171,7 +173,8 @@ export default function AnalyticsSummary() {
     (async () => {
       try {
         setLoading(true);
-        const res = await authFetch('/api/analytics/summary');
+        const params = new URLSearchParams({ timeframe });
+        const res = await authFetch(`/api/analytics/summary?${params.toString()}`);
         if (!ignore) {
           setData(res?.data ?? res);
           setError(null);
@@ -187,7 +190,7 @@ export default function AnalyticsSummary() {
     return () => {
       ignore = true;
     };
-  }, [authFetch]);
+  }, [authFetch, timeframe]);
 
   useEffect(() => {
     let ignore = false;
@@ -217,81 +220,86 @@ export default function AnalyticsSummary() {
       return [];
     }
 
-    const avgOrderValue = data.total_orders ? data.total_revenue / data.total_orders : 0;
+    const comparison = timeframe === 'last_30' ? null : data.comparison;
+    const comparisonLabel = comparison?.label ?? 'vs previous period';
+
+    const buildDelta = (currentValue, previousValue) => {
+      if (!comparison || previousValue === undefined || previousValue === null) {
+        return null;
+      }
+      if (typeof previousValue !== 'number' || previousValue <= 0) {
+        return null;
+      }
+      const diff = currentValue - previousValue;
+      const pct = previousValue !== 0 ? (diff / previousValue) * 100 : 0;
+      const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+      const sign = direction === 'down' ? '−' : direction === 'up' ? '+' : '';
+      return {
+        direction,
+        label: `${sign}${Math.abs(pct).toFixed(1)}% ${comparisonLabel}`,
+      };
+    };
+
+    const totalRevenue = data.total_revenue ?? 0;
+    const totalOrders = data.total_orders ?? 0;
+    const averageOrderValue = data.average_order_value ?? (totalOrders ? totalRevenue / totalOrders : 0);
+    const customerScore = Number(data.customer_satisfaction ?? 4.7);
 
     return [
       {
         key: 'total-revenue',
         label: 'Total Revenue',
-        value: formatCurrency(data.total_revenue),
-        deltaLabel: '+12.5% from last week',
-        deltaDirection: 'up',
+        value: formatCurrency(totalRevenue),
         colorClass: 'text-[var(--app-success)]',
         icon: <FiDollarSign className="text-lg" />,
+        delta: buildDelta(totalRevenue, comparison?.total_revenue),
       },
       {
         key: 'total-orders',
         label: 'Total Orders',
-        value: data.total_orders.toLocaleString(),
-        deltaLabel: '+8.2% from last week',
-        deltaDirection: 'up',
+        value: Number(totalOrders || 0).toLocaleString(),
         colorClass: 'text-[var(--app-info)]',
         icon: <FiShoppingCart className="text-lg" />,
+        delta: buildDelta(totalOrders, comparison?.total_orders),
       },
       {
         key: 'average-order-value',
         label: 'Average Order Value',
-        value: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(avgOrderValue),
-        deltaLabel: '+3.8% from last week',
-        deltaDirection: 'up',
+        value: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(averageOrderValue || 0),
         colorClass: 'text-[var(--app-violet)]',
         icon: <FiTrendingUp className="text-lg" />,
+        delta: buildDelta(averageOrderValue || 0, comparison?.average_order_value),
       },
       {
         key: 'customer-satisfaction',
         label: 'Customer Satisfaction',
-        value: '4.7/5',
-        deltaLabel: '-0.1 from last week',
-        deltaDirection: 'down',
+        value: `${customerScore.toFixed(1)}/5`,
         colorClass: 'text-[var(--app-warning)]',
         icon: <FiSmile className="text-lg" />,
+        delta: null,
       },
     ];
-  }, [data]);
+  }, [data, timeframe]);
 
   const revenueTrend = useMemo(() => {
-    // Example trend data. In a real scenario, this would be fetched for the selected timeframe.
-    if (timeframe === 'last_week') {
-      return [
-        { day: 'Mon', revenue: 2600, orders: 28 },
-        { day: 'Tue', revenue: 3100, orders: 31 },
-        { day: 'Wed', revenue: 2900, orders: 29 },
-        { day: 'Thu', revenue: 3300, orders: 33 },
-        { day: 'Fri', revenue: 4100, orders: 38 },
-        { day: 'Sat', revenue: 4400, orders: 41 },
-        { day: 'Sun', revenue: 3000, orders: 30 },
-      ];
+    if (!data?.daily_trend?.length) {
+      return [];
     }
 
-    if (timeframe === 'last_30') {
-      return [
-        { day: 'Week 1', revenue: 18000, orders: 185 },
-        { day: 'Week 2', revenue: 19400, orders: 198 },
-        { day: 'Week 3', revenue: 21400, orders: 212 },
-        { day: 'Week 4', revenue: 22500, orders: 220 },
-      ];
-    }
+    const formatter = timeframe === 'last_30'
+      ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
+      : new Intl.DateTimeFormat('en-US', { weekday: 'short' });
 
-    return [
-      { day: 'Mon', revenue: 2800, orders: 32 },
-      { day: 'Tue', revenue: 3100, orders: 35 },
-      { day: 'Wed', revenue: 2900, orders: 30 },
-      { day: 'Thu', revenue: 3400, orders: 34 },
-      { day: 'Fri', revenue: 4200, orders: 38 },
-      { day: 'Sat', revenue: 4600, orders: 44 },
-      { day: 'Sun', revenue: 3100, orders: 29 },
-    ];
-  }, [timeframe]);
+    return data.daily_trend.map((entry) => {
+      const sourceDate = `${entry.date}T00:00:00`;
+      const label = formatter.format(new Date(sourceDate));
+      return {
+        day: label,
+        revenue: Number(entry.revenue ?? 0),
+        orders: Number(entry.orders ?? 0),
+      };
+    });
+  }, [data, timeframe]);
 
   const popularItems = useMemo(() => {
     if (!data?.top_selling?.length) return [];
@@ -330,6 +338,119 @@ export default function AnalyticsSummary() {
       }))
       .sort((a, b) => b.assignments - a.assignments);
   }, [data]);
+
+  const handleGenerateReport = useCallback(() => {
+    if (loading) {
+      toast.info('Analytics are still loading. Please wait a moment and try again.');
+      return;
+    }
+
+    if (!data) {
+      toast.error('No analytics data is available to export right now.');
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      toast.error('Report generation is only available in the browser.');
+      return;
+    }
+
+    try {
+      const generatedAt = new Date();
+      const timeframeLabel = timeframeOptions.find((option) => option.value === timeframe)?.label ?? timeframe;
+      const lines = [];
+
+      lines.push('# Restaurant Analytics Report');
+      lines.push('');
+      lines.push(`**Timeframe:** ${timeframeLabel}`);
+      lines.push(`**Generated at:** ${generatedAt.toLocaleString()}`);
+      lines.push(`**Active tab when exported:** ${activeTab}`);
+      lines.push('');
+
+      lines.push('## Summary Metrics');
+      lines.push('');
+      lines.push('| Metric | Value | Change |');
+      lines.push('| --- | ---: | :--- |');
+      metrics.forEach((metric) => {
+        const change = metric.delta?.label ?? '—';
+        lines.push(`| ${metric.label} | ${metric.value} | ${change} |`);
+      });
+      lines.push('');
+
+      lines.push('## Revenue Trend');
+      lines.push('');
+      if (!revenueTrend.length) {
+        lines.push('_No revenue data available for this period._');
+      } else {
+        lines.push('| Day | Revenue | Orders |');
+        lines.push('| --- | ---: | ---: |');
+        revenueTrend.forEach((point) => {
+          lines.push(`| ${point.day} | ${formatCurrency(point.revenue)} | ${point.orders.toLocaleString()} |`);
+        });
+      }
+      lines.push('');
+
+      lines.push('## Top Performing Menu Items');
+      lines.push('');
+      if (!popularItems.length) {
+        lines.push('_No top items were recorded for this timeframe._');
+      } else {
+        lines.push('| Rank | Item | Orders |');
+        lines.push('| ---: | --- | ---: |');
+        popularItems.forEach((item) => {
+          lines.push(`| ${item.rank} | ${item.name} (ID: ${item.id}) | ${item.count.toLocaleString()} |`);
+        });
+      }
+      lines.push('');
+
+      lines.push('## Sales by Category');
+      lines.push('');
+      if (!categoryBreakdown.length) {
+        lines.push('_Category data is not available._');
+      } else {
+        lines.push('| Category | Share | Orders |');
+        lines.push('| --- | ---: | ---: |');
+        categoryBreakdown.forEach((category) => {
+          lines.push(`| ${category.category} | ${category.share}% | ${category.value.toLocaleString()} |`);
+        });
+      }
+      lines.push('');
+
+      lines.push('## Staff Utilization');
+      lines.push('');
+      if (!staffPerformance.length) {
+        lines.push('_No staff utilization data is available._');
+      } else {
+        lines.push('| Staff Member | Shift Assignments |');
+        lines.push('| --- | ---: |');
+        staffPerformance.forEach((staff) => {
+          lines.push(`| ${staff.user} | ${staff.assignments.toLocaleString()} |`);
+        });
+      }
+      lines.push('');
+
+      lines.push('---');
+      lines.push('Report generated by the Bella Vista analytics dashboard.');
+
+      const markdown = lines.join('\n');
+
+      const blob = new Blob([markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const sanitizedTimestamp = generatedAt.toISOString().replace(/[:.]/g, '-');
+      link.href = url;
+      link.download = `analytics-report-${timeframe}-${sanitizedTimestamp}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('Analytics report downloaded successfully.');
+    } catch (error) {
+      console.error('Failed to generate analytics report', error);
+      toast.error('Unable to generate report. Please try again later.');
+    }
+  }, [activeTab, categoryBreakdown, data, loading, metrics, popularItems, revenueTrend, staffPerformance, timeframe]);
 
   if (loading) {
     return (
@@ -375,7 +496,16 @@ export default function AnalyticsSummary() {
             Track restaurant performance, sales trends, and staff metrics
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 justify-end">
+          <button
+            type="button"
+            onClick={handleGenerateReport}
+            disabled={loading || !data}
+            className="inline-flex items-center gap-2 rounded-2xl border border-[rgba(15,23,42,0.1)] bg-[var(--app-primary)] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[color-mix(in_srgb,var(--app-primary)_85%,_black_15%)] focus:outline-none focus:ring-2 focus:ring-[var(--app-primary)] focus:ring-offset-2 focus:ring-offset-[var(--app-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <FiDownload className="text-base" />
+            <span>Generate report</span>
+          </button>
           <div className="relative">
             <select
               value={timeframe}
@@ -403,14 +533,22 @@ export default function AnalyticsSummary() {
               <div>
                 <p className="text-sm font-medium text-[var(--app-muted)]">{metric.label}</p>
                 <div className={`mt-3 text-3xl font-semibold ${metric.colorClass}`}>{metric.value}</div>
-                <div
-                  className={`mt-2 inline-flex items-center gap-1 text-sm ${
-                    metric.deltaDirection === 'down' ? 'text-[var(--app-warning)]' : 'text-[var(--app-success)]'
-                  }`}
-                >
-                  <span aria-hidden="true">{metric.deltaDirection === 'down' ? '▼' : '▲'}</span>
-                  <span className="font-medium">{metric.deltaLabel}</span>
-                </div>
+                {metric.delta && (
+                  <div
+                    className={`mt-2 inline-flex items-center gap-1 text-sm ${
+                      metric.delta.direction === 'down'
+                        ? 'text-[var(--app-warning)]'
+                        : metric.delta.direction === 'neutral'
+                        ? 'text-[var(--app-muted)]'
+                        : 'text-[var(--app-success)]'
+                    }`}
+                  >
+                    <span aria-hidden="true">
+                      {metric.delta.direction === 'down' ? '▼' : metric.delta.direction === 'neutral' ? '—' : '▲'}
+                    </span>
+                    <span className="font-medium">{metric.delta.label}</span>
+                  </div>
+                )}
               </div>
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(15,23,42,0.05)] text-[var(--app-primary)]">
                 {metric.icon}
@@ -448,10 +586,16 @@ export default function AnalyticsSummary() {
             <div>
               <h2 className="text-xl font-semibold text-[var(--app-text)]">Daily Revenue Trend</h2>
               <p className="mt-2 text-sm text-[var(--app-muted)]">
-                Revenue and order count for the past week
+                Revenue and order count for the selected timeframe
               </p>
             </div>
-            <RevenueTrendChart data={revenueTrend} />
+            {revenueTrend.length === 0 ? (
+              <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-[rgba(15,23,42,0.08)] bg-[var(--app-bg)]">
+                <p className="text-sm text-[var(--app-muted)]">No revenue data available for this period.</p>
+              </div>
+            ) : (
+              <RevenueTrendChart data={revenueTrend} />
+            )}
           </div>
         )}
 

@@ -9,6 +9,29 @@ const Header = () => {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const navigate = useNavigate();
 
+  const role = (profile?.role || '').toLowerCase();
+  const isManagerOrAdmin = ['manager', 'admin'].includes(role);
+  const isStaffOnly = ['staff', 'server'].includes(role) && !isManagerOrAdmin;
+  const isUserRole = role === 'user';
+
+  const navItems = (() => {
+    if (isStaffOnly) {
+      return [{ label: 'Schedule', to: '/schedule' }];
+    }
+
+    const base = [
+      { label: 'Home', to: '/' },
+      { label: 'Menu', to: '/menu' },
+    ];
+
+    if (isAuthenticated) {
+      base.push({ label: 'Schedule', to: '/schedule' });
+      base.push({ label: 'Analytics', to: '/analytics' });
+    }
+
+    return base;
+  })();
+
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
@@ -35,22 +58,11 @@ const Header = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex space-x-6">
-            <Link to="/" className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition">
-              Home
-            </Link>
-            <Link to="/menu" className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition">
-              Menu
-            </Link>
-            {isAuthenticated && (
-              <>
-                <Link to="/schedule" className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition">
-                  Schedule
-                </Link>
-                <Link to="/analytics" className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition">
-                  Analytics
-                </Link>
-              </>
-            )}
+            {navItems.map((item) => (
+              <Link key={item.to} to={item.to} className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition">
+                {item.label}
+              </Link>
+            ))}
           </nav>
 
           {/* Authentication */}
@@ -73,13 +85,15 @@ const Header = () => {
                 {isProfileDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-[var(--app-surface)] z-10">
                     <div className="py-1">
-                      <Link
-                        to="/profile"
-                        className="block px-4 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-bg)]"
-                        onClick={() => setIsProfileDropdownOpen(false)}
-                      >
-                        Profile
-                      </Link>
+                      {isUserRole ? (
+                        <Link
+                          to="/profile"
+                          className="block px-4 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-bg)]"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                        >
+                          Profile
+                        </Link>
+                      ) : null}
                       <button
                         className="flex items-center w-full px-4 py-2 text-sm text-[var(--app-text)] hover:bg-[var(--app-bg)]"
                         onClick={handleLogout}
@@ -115,47 +129,27 @@ const Header = () => {
       {isMenuOpen && (
         <div className="md:hidden bg-[var(--app-surface)] py-3 px-4 border-t">
           <nav className="flex flex-col space-y-3">
-            <Link
-              to="/"
-              className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Home
-            </Link>
-            <Link
-              to="/menu"
-              className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Menu
-            </Link>
-            {isAuthenticated && (
-              <>
-                <Link
-                  to="/schedule"
-                  className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Schedule
-                </Link>
-                <Link
-                  to="/analytics"
-                  className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Analytics
-                </Link>
-              </>
-            )}
+            {navItems.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {item.label}
+              </Link>
+            ))}
             {isAuthenticated ? (
               <>
-                <Link
-                  to="/profile"
-                  className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Profile
-                </Link>
+                {isUserRole ? (
+                  <Link
+                    to="/profile"
+                    className="text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Profile
+                  </Link>
+                ) : null}
                 <button
                   className="flex items-center text-left text-[var(--app-text)] hover:text-[var(--app-accent)] transition"
                   onClick={() => {

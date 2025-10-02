@@ -170,7 +170,7 @@ const ProfilePage = () => {
           </div>
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
           <section className="space-y-4 rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-4">
@@ -311,7 +311,7 @@ const ProfilePage = () => {
             )}
           </section>
 
-          <section className="space-y-4">
+          <section className="space-y-4 rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-[var(--app-text)]">Recent activity</h2>
               <button

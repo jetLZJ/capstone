@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiMenu,
   FiX,
@@ -32,9 +32,35 @@ const Header = () => {
   const [orderCount, setOrderCount] = useState(() => readOrderMetaCount());
   const location = useLocation();
   const { isAuthenticated, logout, profile } = useAuth();
+  const navigate = useNavigate();
 
   const role = (profile?.role || '').toLowerCase();
   const isUserRole = isAuthenticated && role === 'user';
+  const isManagerOrAdmin = ['manager', 'admin'].includes(role);
+  const isStaffOnly = ['staff', 'server'].includes(role) && !isManagerOrAdmin;
+
+  const staffNavItems = useMemo(
+    () => [
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+    ],
+    [],
+  );
+
+  const managerNavItems = useMemo(
+    () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
+      {
+        label: 'Menu',
+        to: '/menu',
+        isActive: (path) => ['/menu', '/orders', '/profile'].some((prefix) => path.startsWith(prefix)),
+      },
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+      { label: 'Analytics', to: '/analytics', isActive: (path) => path.startsWith('/analytics') },
+    ],
+    [],
+  );
+
+  const navItems = isAuthenticated ? (isStaffOnly ? staffNavItems : managerNavItems) : [];
 
   useEffect(() => {
     const updateFromStorage = () => setOrderCount(readOrderMetaCount());
@@ -84,6 +110,12 @@ const Header = () => {
     });
   };
 
+  const handleLogout = async () => {
+    setIsOpen(false);
+    await logout();
+    navigate('/');
+  };
+
   if (isUserRole) {
     return (
       <header className="bg-[var(--app-surface)] shadow-sm">
@@ -109,7 +141,7 @@ const Header = () => {
                 </Link>
                 <button
                   type="button"
-                  onClick={logout}
+                  onClick={handleLogout}
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
                 >
                   <FiLogOut className="text-base" />
@@ -150,44 +182,21 @@ const Header = () => {
           </Link>
 
           <nav className="hidden items-center space-x-6 md:flex">
-            {isAuthenticated && (
-              <>
-                <Link
-                  to="/"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname === '/' ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Home
-                </Link>
-                <Link
-                  to="/menu"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    ['/menu', '/orders', '/profile'].some((path) => location.pathname.startsWith(path))
-                      ? 'font-semibold text-[var(--app-accent)]'
-                      : ''
-                  }`}
-                >
-                  Menu
-                </Link>
-                <Link
-                  to="/schedule"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname.startsWith('/schedule') ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Schedule
-                </Link>
-                <Link
-                  to="/analytics"
-                  className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
-                    location.pathname.startsWith('/analytics') ? 'font-semibold text-[var(--app-accent)]' : ''
-                  }`}
-                >
-                  Analytics
-                </Link>
-              </>
-            )}
+            {isAuthenticated &&
+              navItems.map((item) => {
+                const active = item.isActive ? item.isActive(location.pathname) : location.pathname === item.to;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
+                      active ? 'font-semibold text-[var(--app-accent)]' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
 
             <button
               onClick={toggleDarkMode}
@@ -199,7 +208,7 @@ const Header = () => {
 
             {isAuthenticated ? (
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
               >
                 Logout
@@ -221,20 +230,18 @@ const Header = () => {
             <div className="flex flex-col space-y-4">
               {isAuthenticated ? (
                 <>
-                  <Link to="/" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Home
-                  </Link>
-                  <Link to="/menu" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Menu
-                  </Link>
-                  <Link to="/schedule" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Schedule
-                  </Link>
-                  <Link to="/analytics" className="text-[var(--app-text)] hover:text-[var(--app-accent)]">
-                    Analytics
-                  </Link>
+                  {navItems.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="text-[var(--app-text)] hover:text-[var(--app-accent)]"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
                   <button
-                    onClick={logout}
+                    onClick={handleLogout}
                     className="text-left text-[var(--app-text)] hover:text-[var(--app-accent)]"
                   >
                     Logout

@@ -100,6 +100,9 @@ const DayColumn = ({ day, assignments, isActive, onAdd, onEdit, isManager }) => 
   );
 };
 
+const navButtonClass =
+  'rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] shadow-sm transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] hover:shadow-md';
+
 export default function ScheduleCalendar({
   days,
   weekStart,
@@ -109,6 +112,7 @@ export default function ScheduleCalendar({
   onAddShift,
   onEditShift,
   onMoveShift,
+  onNavigateWeek,
 }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
@@ -177,22 +181,26 @@ export default function ScheduleCalendar({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--app-text)]">Week of {parseISOToDate(weekStart).toLocaleDateString()}</h2>
           <p className="text-sm text-[var(--app-muted)]">
             Through {addDays(parseISOToDate(weekStart), 6).toLocaleDateString()}
           </p>
         </div>
-        {isManager && (
-          <button
-            type="button"
-            onClick={() => onAddShift(weekStart)}
-            className="rounded-full bg-[var(--app-primary)] px-5 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
-          >
-            + New assignment
-          </button>
-        )}
+        {typeof onNavigateWeek === 'function' ? (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onNavigateWeek('prev')} className={navButtonClass}>
+              ← Previous
+            </button>
+            <button type="button" onClick={() => onNavigateWeek('today')} className={navButtonClass}>
+              This week
+            </button>
+            <button type="button" onClick={() => onNavigateWeek('next')} className={navButtonClass}>
+              Next →
+            </button>
+          </div>
+        ) : null}
       </div>
 
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>

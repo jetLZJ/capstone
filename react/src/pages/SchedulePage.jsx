@@ -41,8 +41,6 @@ const SchedulePage = () => {
   const isManager = normalizedRole === 'manager' || normalizedRole === 'admin';
   const isStaff = normalizedRole === 'staff' || normalizedRole === 'server';
   const activeWeekStart = data.week_start || weekStart;
-  const navButtonClass =
-    'rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] shadow-sm transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] hover:shadow-md dark:border-[rgba(255,255,255,0.08)]';
 
   const loadWeek = useCallback(async (ws) => {
     setLoading(true);
@@ -248,17 +246,6 @@ const SchedulePage = () => {
               Coordinate staffing coverage, track confirmations, and resolve conflicts quickly.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => weekNav('prev')} className={navButtonClass}>
-              ← Previous
-            </button>
-            <button type="button" onClick={() => weekNav('today')} className={navButtonClass}>
-              This week
-            </button>
-            <button type="button" onClick={() => weekNav('next')} className={navButtonClass}>
-              Next →
-            </button>
-          </div>
         </div>
 
         <div className="flex flex-col gap-6">
@@ -287,6 +274,7 @@ const SchedulePage = () => {
             onAddShift={(date) => openEditor('create', null, date)}
             onEditShift={(shift) => openEditor('edit', shift, shift.shift_date)}
             onMoveShift={isManager ? handleMove : undefined}
+            onNavigateWeek={weekNav}
           />
 
           <ShiftEditor

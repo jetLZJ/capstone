@@ -23,8 +23,11 @@ const StaffDashboard = () => {
   const coverage = schedule?.coverage;
   const totalAssigned = (coverage?.confirmed ?? 0) + (coverage?.scheduled ?? 0);
 
-  const assignments = useMemo(() => {
+  const upcoming = useMemo(() => {
     if (!schedule?.days?.length) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     return schedule.days
       .flatMap((day) =>
         (day.assignments || []).map((assignment) => ({
@@ -37,19 +40,14 @@ const StaffDashboard = () => {
         ...item,
         startDate: parseDate(item.start, item.shift_date || item.dayDate),
       }))
+      .filter((item) => item.startDate && item.startDate >= today)
       .sort((a, b) => {
         const aTime = a.startDate ? a.startDate.getTime() : Infinity;
         const bTime = b.startDate ? b.startDate.getTime() : Infinity;
         return aTime - bTime;
-      });
+      })
+      .slice(0, 3);
   }, [schedule]);
-
-  const upcoming = useMemo(() => {
-    if (!assignments.length) return [];
-    const now = new Date();
-    const future = assignments.filter((item) => item.startDate && item.startDate >= now);
-    return future.length ? future : assignments.slice(0, 1);
-  }, [assignments]);
 
   if (loading) {
     return (
@@ -76,7 +74,7 @@ const StaffDashboard = () => {
   }
 
   const nextShift = upcoming[0];
-  const otherShifts = upcoming.slice(1, 3);
+  const otherShifts = upcoming.slice(1);
 
   return (
     <div className="space-y-8">
@@ -87,12 +85,7 @@ const StaffDashboard = () => {
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-[var(--app-text)]">Your next shift</h2>
-            <Link to="/schedule" className="text-sm font-medium text-[var(--app-accent)] hover:underline">
-              View schedule
-            </Link>
-          </div>
+          <h2 className="text-lg font-semibold text-[var(--app-text)]">Your next shift</h2>
 
           {nextShift ? (
             <div className="mt-4 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[rgba(15,23,42,0.03)] p-4">
@@ -102,7 +95,7 @@ const StaffDashboard = () => {
               {nextShift.notes ? <p className="mt-2 text-xs text-[var(--app-muted)]">{nextShift.notes}</p> : null}
             </div>
           ) : (
-            <p className="mt-4 text-sm text-[var(--app-muted)]">No shifts assigned for this week yet.</p>
+            <p className="mt-4 text-sm text-[var(--app-muted)]">No upcoming shifts for you.</p>
           )}
 
           {otherShifts.length ? (
@@ -146,18 +139,12 @@ const StaffDashboard = () => {
             <p className="mt-4 text-sm text-[var(--app-muted)]">Coverage metrics aren’t available right now.</p>
           )}
 
-          <div className="mt-6 space-y-3 text-sm">
+          <div className="mt-6 text-sm">
             <Link
               to="/schedule"
               className="inline-flex w-full items-center justify-center rounded-full bg-[var(--app-primary)] px-4 py-2 font-semibold text-[var(--app-primary-contrast)]"
             >
               Open schedule board
-            </Link>
-            <Link
-              to="/profile"
-              className="inline-flex w-full items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] px-4 py-2 font-semibold text-[var(--app-text)] hover:border-[var(--app-primary)]"
-            >
-              Update availability
             </Link>
           </div>
         </div>

@@ -52,6 +52,7 @@ const Header = () => {
 
   const staffNavItems = useMemo(
     () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
       { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
     ],
     [],
@@ -135,8 +136,9 @@ const Header = () => {
           <div className="flex flex-col gap-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <Link to="/menu" className="text-2xl font-semibold text-[var(--app-text)] font-serif">
-                  Bella Vista
+                <Link to="/menu" className="flex items-center gap-3">
+                  <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-10 w-10 rounded-full object-cover" />
+                  <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
                 </Link>
                 <p className="mt-1 text-sm text-[var(--app-muted)]">
                   Welcome back, {profile?.first_name || 'Guest'}
@@ -197,8 +199,9 @@ const Header = () => {
     <header className="bg-[var(--app-surface)] shadow-md">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between py-4">
-          <Link to="/" className="text-2xl font-bold text-[var(--app-accent)] font-serif">
-            RestaurantManager
+          <Link to="/" className="flex items-center gap-3">
+            <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-9 w-9 rounded-full object-cover" />
+            <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
           </Link>
 
           <nav className="hidden items-center space-x-6 md:flex">

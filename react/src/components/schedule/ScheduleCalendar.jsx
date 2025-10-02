@@ -135,7 +135,7 @@ const DayColumn = ({
   const hasAssignments = (assignments || []).length > 0;
   const shiftSummary = hasAssignments
     ? `${assignments.length} shift${assignments.length === 1 ? '' : 's'}`
-    : 'No assignments yet';
+    : 'No shift assign';
 
   const positionedAssignments = (assignments || []).map((assignment) => {
     const metrics = calculateTimelineMetrics(assignment.start, assignment.end);
@@ -178,31 +178,35 @@ const DayColumn = ({
           : ''
       )}
     >
-      <div className="flex items-start justify-between gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)] px-2 py-1 text-left min-h-[5.5rem]">
-        <div className="flex flex-1 min-w-0 flex-col gap-1">
-          <div className="text-sm font-semibold text-[var(--app-text)]">{formattedDate}</div>
-          <div className="text-xs text-[var(--app-muted)] whitespace-nowrap overflow-hidden text-ellipsis">{shiftSummary}</div>
-          {holidayInfo ? (
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--app-warning)]">
-              <span className="rounded-full bg-[color-mix(in_srgb,var(--app-warning)_14%,_var(--app-surface)_86%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-warning)]">
-                Holiday
-              </span>
-              <span className="truncate" title={holidayInfo.name}>
-                {holidayInfo.name}
-              </span>
-              {holidayInfo.observed ? <span className="text-[var(--app-muted)]">(Observed)</span> : null}
-            </div>
+      {holidayInfo ? (
+        <div className="pointer-events-none absolute left-1/2 -top-4 z-30 flex -translate-x-1/2 flex-col items-center gap-1">
+          <span
+            className="pointer-events-auto rounded-full bg-[color-mix(in_srgb,var(--app-warning)_14%,_var(--app-surface)_86%)] px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--app-warning)] shadow-[0_5px_14px_-6px_color-mix(in_srgb,var(--app-warning)_48%,_transparent_52%)]"
+            title={holidayInfo.name || 'Holiday'}
+          >
+            {holidayInfo.name || 'Holiday'}
+          </span>
+          {holidayInfo.observed ? (
+            <span className="pointer-events-auto text-[10px] font-medium uppercase tracking-wide text-[color-mix(in_srgb,var(--app-muted)_92%,_var(--app-warning)_8%)]">
+              Observed
+            </span>
           ) : null}
         </div>
-        {isManager ? (
-          <button
-            type="button"
-            onClick={() => onAdd(day.date)}
-            className="rounded-full border border-dashed border-[rgba(15,23,42,0.2)] px-2 py-1 text-xs text-[var(--app-muted)] transition hover:border-[var(--app-info)] hover:text-[var(--app-info)]"
-          >
-            + Add
-          </button>
-        ) : null}
+      ) : null}
+      <div className="flex flex-wrap items-start gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)] px-2 py-1 text-left min-h-[5.5rem]">
+        <div className="flex w-full items-start justify-between gap-2">
+          <div className="text-sm font-semibold text-[var(--app-text)]">{formattedDate}</div>
+          {isManager ? (
+            <button
+              type="button"
+              onClick={() => onAdd(day.date)}
+              className="rounded-full border border-dashed border-[rgba(15,23,42,0.2)] px-2 py-1 text-xs text-[var(--app-muted)] transition hover:border-[var(--app-info)] hover:text-[var(--app-info)]"
+            >
+              + Add
+            </button>
+          ) : null}
+        </div>
+        <div className="w-full text-xs text-[var(--app-muted)]">{shiftSummary}</div>
       </div>
 
       <div className="flex-1">

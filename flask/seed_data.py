@@ -553,29 +553,30 @@ def seed_menu_items(conn):
     # Get type ids
     cur.execute('SELECT id, name FROM types')
     types = [r[0] for r in cur.fetchall()]
+    # Reset existing items to ensure we always seed the curated collection
+    print('Clearing existing menu items to reseed curated offerings')
+    cur.execute('DELETE FROM menu_items')
+
     sample_items = [
-        ('Spring Rolls', 5.5, 'Crispy spring rolls', 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80', 10),
-        ('Beef Burger', 9.5, 'Grilled beef burger', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=800&q=80', 8),
-        ('Cheesecake', 6.0, 'Creamy cheesecake', 'https://images.unsplash.com/photo-1505253758473-96b7015fcd40?auto=format&fit=crop&w=800&q=80', 6),
-        ('Lemonade', 3.0, 'Fresh lemonade', 'https://images.unsplash.com/photo-1558640472-9d2a7deb7f62?auto=format&fit=crop&w=800&q=80', 20),
-        ('Caesar Salad', 7.0, 'Fresh greens', 'https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80', 12),
-        ('Grilled Salmon', 14.5, 'Served with veggies', 'https://images.unsplash.com/photo-1514516345957-556ca7d90aaf?auto=format&fit=crop&w=800&q=80', 5),
-        ('Chocolate Mousse', 5.5, 'Rich chocolate mousse', 'https://images.unsplash.com/photo-1488900128323-21503983a07e?auto=format&fit=crop&w=800&q=80', 7),
-        ('Iced Tea', 2.5, 'Brewed iced tea', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80', 15),
-        ('Spaghetti', 10.0, 'Pasta with tomato sauce', 'https://images.unsplash.com/photo-1525755662778-989d0524087e?auto=format&fit=crop&w=800&q=80', 9),
-        ('Garlic Bread', 3.5, 'Toasted garlic bread', 'https://images.unsplash.com/photo-1604908178086-d1a112d7e1bd?auto=format&fit=crop&w=800&q=80', 11)
+        ('Heirloom Burrata Salad', 12.5, 'Heirloom tomatoes, burrata, basil oil, balsamic pearls', 'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=1200&q=80', 18),
+        ('Housemade Mushroom Tagliatelle', 18.0, 'Hand-cut pasta, wild mushrooms, parmesan cream', 'https://images.unsplash.com/photo-1525755662778-989d0524087e?auto=format&fit=crop&w=1200&q=80', 20),
+        ('Herb-Crusted Salmon', 21.0, 'Pan-seared salmon with lemon beurre blanc and asparagus', 'https://images.unsplash.com/photo-1514516345957-556ca7d90aaf?auto=format&fit=crop&w=1200&q=80', 12),
+        ('Wood-Fired Margherita Pizza', 15.0, 'San Marzano tomatoes, fresh mozzarella, basil', 'https://images.unsplash.com/photo-1548365328-96c4a0899736?auto=format&fit=crop&w=1200&q=80', 20),
+        ('Smoked Brisket Sliders', 13.5, 'House-smoked brisket, pickled onions, brioche buns', 'https://images.unsplash.com/photo-1540396890193-eb385829f230?auto=format&fit=crop&w=1200&q=80', 24),
+        ('Lobster Bisque', 11.0, 'Silky bisque finished with cognac cream and chive oil', 'https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=1200&q=80', 16),
+        ('Seared Scallops', 23.0, 'Butternut puree, crispy prosciutto, brown butter crumble', 'https://images.unsplash.com/photo-1543353071-10c8ba85a904?auto=format&fit=crop&w=1200&q=80', 10),
+        ('Seasonal Roasted Vegetables', 9.0, 'Charred broccolini, rainbow carrots, smoked almonds', 'https://images.unsplash.com/photo-1604908815795-01f72b5f52ff?auto=format&fit=crop&w=1200&q=80', 22),
+        ('Passionfruit Pavlova', 9.5, 'Crisp meringue, vanilla chantilly, fresh passionfruit', 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=1200&q=80', 15),
+        ('Tiramisu Affogato', 8.0, 'Espresso-soaked ladyfingers, mascarpone cream, espresso shot', 'https://images.unsplash.com/photo-1506443432602-ac2fcd6f54e1?auto=format&fit=crop&w=1200&q=80', 17),
+        ('Citrus Spritz Mocktail', 6.5, 'Blood orange, grapefruit, rosemary, sparkling water', 'https://images.unsplash.com/photo-1613470207930-3e9958f55d2c?auto=format&fit=crop&w=1200&q=80', 30),
     ]
 
-    # Insert only if name not present
     for name, price, desc, img, qty in sample_items:
-        cur.execute('SELECT id FROM menu_items WHERE name=?', (name,))
-        if cur.fetchone():
-            print('Menu item exists, skipping:', name)
-            continue
         type_id = random.choice(types) if types else None
-        cur.execute('INSERT INTO menu_items (name,price,description,img_link,qty_left,type_id,discount) VALUES (?,?,?,?,?,?,?)', (
-            name, price, desc, img, qty, type_id, 0
-        ))
+        cur.execute(
+            'INSERT INTO menu_items (name,price,description,img_link,qty_left,type_id,discount) VALUES (?,?,?,?,?,?,?)',
+            (name, price, desc, img, qty, type_id, 0),
+        )
         print('Inserted menu item:', name)
     conn.commit()
 
@@ -594,7 +595,8 @@ def seed_orders(conn):
         print('No users or menu items to create orders')
         return
 
-    base_time = datetime.utcnow().replace(hour=11, minute=30, second=0, microsecond=0)
+    now = datetime.utcnow()
+    base_time = now.replace(hour=11, minute=30, second=0, microsecond=0)
     week_offsets = [-3, -2, -1, 0]
     created_orders = 0
 
@@ -612,6 +614,8 @@ def seed_orders(conn):
     for user_index, uid in enumerate(user_ids[:5]):
         for week_index, offset in enumerate(week_offsets):
             order_time = base_time + timedelta(weeks=offset, days=user_index % 3, hours=week_index * 2)
+            if order_time > now:
+                continue
             cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
             order_id = cur.lastrowid
             items = build_items(user_index + week_index)
@@ -622,6 +626,8 @@ def seed_orders(conn):
     for week_index, offset in enumerate(week_offsets):
         for uid in weekend_users:
             order_time = base_time + timedelta(weeks=offset, days=5, hours=18 + week_index)
+            if order_time > now:
+                continue
             cur.execute('INSERT INTO orders (member_id, order_timestamp) VALUES (?,?)', (uid, order_time))
             order_id = cur.lastrowid
             seed_index = (uid + week_index) % len(item_ids)

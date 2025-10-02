@@ -3,7 +3,16 @@ import ScheduleCalendar from '../components/schedule/ScheduleCalendar';
 import ScheduleSidebar from '../components/schedule/ShiftList';
 import ShiftEditor from '../components/schedule/ShiftEditor';
 import useAuth from '../hooks/useAuth';
-import { mergeNotifications, startOfWeek, toApiDate, toApiTime, toDateInputValue } from '../components/schedule/scheduleHelpers';
+import {
+  ensureSingaporeHolidays,
+  getSingaporeHoliday,
+  mergeNotifications,
+  parseISOToDate,
+  startOfWeek,
+  toApiDate,
+  toApiTime,
+  toDateInputValue,
+} from '../components/schedule/scheduleHelpers';
 import { toast } from 'react-toastify';
 
 const initialFilters = { staffId: '', status: '' };
@@ -12,13 +21,13 @@ const parseWeekString = (value) => {
   if (!value) return startOfWeek(new Date());
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
+    return startOfWeek(new Date(year, month - 1, day));
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return startOfWeek(new Date());
   }
-  return parsed;
+  return startOfWeek(parsed);
 };
 
 const SchedulePage = () => {
@@ -35,6 +44,7 @@ const SchedulePage = () => {
   const [availabilityEntries, setAvailabilityEntries] = useState([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [teamAvailability, setTeamAvailability] = useState({});
 
   const role = useMemo(() => data.role || profile?.role || 'User', [data.role, profile?.role]);
   const normalizedRole = (role || '').toLowerCase();
@@ -42,16 +52,44 @@ const SchedulePage = () => {
   const isStaff = normalizedRole === 'staff' || normalizedRole === 'server';
   const activeWeekStart = data.week_start || weekStart;
 
+  useEffect(() => {
+    const todayWeek = toDateInputValue(startOfWeek(new Date()));
+    setWeekStart((current) => (current === todayWeek ? current : todayWeek));
+  }, []);
+
   const loadWeek = useCallback(async (ws) => {
     setLoading(true);
     try {
       const response = await authFetch('/api/schedules/week', { params: { week_start: ws } });
       const payload = response?.data || {};
+      const incomingDays = payload.days || [];
+      const yearsToLoad = Array.from(
+        new Set(
+          incomingDays
+            .map((day) => parseISOToDate(day.date))
+            .map((dateObj) => (Number.isNaN(dateObj.getTime()) ? null : dateObj.getFullYear()))
+            .filter((year) => Number.isFinite(year))
+        )
+      );
+
+      if (yearsToLoad.length) {
+        await ensureSingaporeHolidays(yearsToLoad);
+      }
+
+      const hydratedDays = incomingDays.map((day) => ({
+        ...day,
+        holiday: getSingaporeHoliday(day.date),
+      }));
+
+      const normalizedWeekStart = toDateInputValue(parseWeekString(payload.week_start || ws));
+
+      setWeekStart((current) => (current === normalizedWeekStart ? current : normalizedWeekStart));
+
       setData({
-        days: payload.days || [],
+        days: hydratedDays,
         coverage: payload.coverage || {},
         role: payload.role,
-        week_start: payload.week_start || ws,
+        week_start: normalizedWeekStart,
       });
     } catch (error) {
       console.error('Failed to load schedule', error);
@@ -89,6 +127,39 @@ const SchedulePage = () => {
     }
   }, [authFetch, isStaff]);
 
+  const loadTeamAvailability = useCallback(async (ws) => {
+    if (!isManager) {
+      setTeamAvailability({});
+      return;
+    }
+    try {
+      const response = await authFetch('/api/schedules/availability', { params: { week_start: ws } });
+      const entries = response?.data?.entries || [];
+      const index = new Map();
+      entries.forEach((entry) => {
+        const dateValue = entry?.date;
+        const parsedDate = parseISOToDate(dateValue);
+        const dateKey = toDateInputValue(parsedDate) || (typeof dateValue === 'string' ? dateValue.slice(0, 10) : '');
+        const staffIdRaw = entry?.user_id ?? entry?.staff_id ?? entry?.id;
+        const staffIdToken = staffIdRaw !== null && staffIdRaw !== undefined ? String(staffIdRaw) : '';
+        if (!dateKey || !staffIdToken) return;
+        if (entry?.is_available === false) {
+          const existing = index.get(dateKey) || new Set();
+          existing.add(staffIdToken);
+          index.set(dateKey, existing);
+        }
+      });
+      const normalized = {};
+      index.forEach((value, key) => {
+        normalized[key] = Array.from(value);
+      });
+      setTeamAvailability(normalized);
+    } catch (error) {
+      console.error('Failed to load team availability', error);
+      setTeamAvailability({});
+    }
+  }, [authFetch, isManager]);
+
   useEffect(() => {
     loadWeek(weekStart);
   }, [loadWeek, weekStart]);
@@ -104,6 +175,14 @@ const SchedulePage = () => {
       setAvailabilityEntries([]);
     }
   }, [isStaff, loadAvailability, activeWeekStart]);
+
+  useEffect(() => {
+    if (isManager) {
+      loadTeamAvailability(activeWeekStart);
+    } else {
+      setTeamAvailability({});
+    }
+  }, [isManager, loadTeamAvailability, activeWeekStart]);
 
   const refreshWeek = useCallback(() => {
     loadWeek(weekStart);
@@ -292,6 +371,7 @@ const SchedulePage = () => {
             initialShift={editorState.shift}
             defaultDate={editorState.defaultDate}
             staffOptions={staff}
+            availabilityByDate={teamAvailability}
             onSave={handleSave}
             onDelete={handleDelete}
             onClose={closeEditor}

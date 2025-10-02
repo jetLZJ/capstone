@@ -1,10 +1,42 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
-import { addDays, applyFilters, formatTimeRange, parseISOToDate, statusMeta, computeDurationLabel } from './scheduleHelpers';
+import {
+  addDays,
+  applyFilters,
+  calculateTimelineMetrics,
+  computeDurationLabel,
+  formatTimeRange,
+  getSingaporeHoliday,
+  parseISOToDate,
+  statusMeta,
+  toDateInputValue,
+  WORKING_DAY_END_MINUTES,
+  WORKING_DAY_START_MINUTES,
+  WORKING_DAY_TOTAL_MINUTES,
+} from './scheduleHelpers';
 
 const classNames = (...values) => values.filter(Boolean).join(' ');
 
-const ShiftCard = ({ assignment, isManager, onEdit }) => {
+const formatHourLabel = (hour) => {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour} ${period}`;
+};
+
+const TIMELINE_HOURS = Array.from(
+  { length: Math.round(WORKING_DAY_TOTAL_MINUTES / 60) + 1 },
+  (_, idx) => Math.floor(WORKING_DAY_START_MINUTES / 60) + idx
+);
+
+const TIMELINE_MARKERS = TIMELINE_HOURS.map((hour) => ({
+  hour,
+  label: formatHourLabel(hour),
+  position: ((hour * 60 - WORKING_DAY_START_MINUTES) / WORKING_DAY_TOTAL_MINUTES) * 100,
+}));
+
+const MIN_TIMELINE_BLOCK_PERCENT = Math.max((15 / WORKING_DAY_TOTAL_MINUTES) * 100, 1.5);
+
+const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
   const meta = statusMeta(assignment.status);
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `assignment-${assignment.id}`,
@@ -13,6 +45,32 @@ const ShiftCard = ({ assignment, isManager, onEdit }) => {
 
   const start = parseISOToDate(assignment.start);
   const durationLabel = computeDurationLabel(assignment.start, assignment.end);
+  const tooltipParts = [
+    assignment.staff_name ? `Staff: ${assignment.staff_name}` : 'Staff: Unassigned',
+    assignment.role ? `Role: ${assignment.role}` : null,
+    `Time: ${formatTimeRange(assignment.start, assignment.end)}`,
+    assignment.notes ? `Notes: ${assignment.notes}` : null,
+  ].filter(Boolean);
+  const tooltip = tooltipParts.join('\n');
+
+  const handleDoubleClick = () => {
+    if (isManager && typeof onEdit === 'function') {
+      onEdit(assignment);
+    }
+  };
+
+  const handleKeyDown = (event) => {
+    if (!isManager || typeof onEdit !== 'function') return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onEdit(assignment);
+    }
+  };
+
+  const handleClick = () => {
+    if (!isTouchDevice || !isManager || typeof onEdit !== 'function' || isDragging) return;
+    onEdit(assignment);
+  };
 
   return (
     <div
@@ -20,60 +78,122 @@ const ShiftCard = ({ assignment, isManager, onEdit }) => {
       {...listeners}
       {...attributes}
       className={classNames(
-  'rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
-  isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
+        'flex h-full flex-col justify-between rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
+        isManager ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]' : 'cursor-default',
+        isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
+      onDoubleClick={handleDoubleClick}
+      onKeyDown={handleKeyDown}
+      onClick={handleClick}
+      tabIndex={isManager ? 0 : undefined}
+      title={tooltip}
+      style={style}
     >
       <div className="flex items-start justify-between gap-3 p-3">
-        <div>
+        <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
             <span className={classNames('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium', meta.bg)}>
               <span className={classNames('h-2 w-2 rounded-full', meta.dot)} />
               {meta.label}
             </span>
-            {durationLabel && <span className="text-xs text-[var(--app-muted)]">{durationLabel}</span>}
+            {durationLabel ? (
+              <span className="whitespace-nowrap text-xs text-[var(--app-muted)]">{durationLabel}</span>
+            ) : null}
           </div>
-          <div className="mt-2 text-sm font-semibold text-[var(--app-text)]">{assignment.staff_name || 'Unassigned'}</div>
-          <div className="text-xs text-[var(--app-muted)]">{assignment.role || 'General'}</div>
+          <div className="truncate text-sm font-semibold text-[var(--app-text)]" title={assignment.staff_name || 'Unassigned'}>
+            {assignment.staff_name || 'Unassigned'}
+          </div>
+          <div className="truncate text-xs text-[var(--app-muted)]" title={assignment.role || 'General'}>
+            {assignment.role || 'General'}
+          </div>
         </div>
         <div className="text-right">
-          <div className="text-sm font-medium text-[var(--app-text)]">{formatTimeRange(assignment.start, assignment.end)}</div>
+          <div className="whitespace-nowrap text-sm font-medium text-[var(--app-text)]">{formatTimeRange(assignment.start, assignment.end)}</div>
           <div className="text-xs text-[var(--app-muted)]">
             {Number.isNaN(start.getTime()) ? '' : start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
       </div>
-      {assignment.notes ? (
-        <div className="border-t border-[rgba(15,23,42,0.08)] px-3 py-2 text-xs text-[var(--app-muted)]">{assignment.notes}</div>
-      ) : null}
-      {isManager ? (
-  <div className="border-t border-[rgba(15,23,42,0.08)] px-3 py-2 text-xs text-[var(--app-info)] transition hover:text-[color-mix(in_srgb,var(--app-info)_80%,_var(--app-text)_20%)]">
-          <button type="button" onClick={() => onEdit(assignment)}>Edit shift</button>
-        </div>
-      ) : null}
     </div>
   );
 };
 
-const DayColumn = ({ day, assignments, isActive, onAdd, onEdit, isManager }) => {
+const DayColumn = ({
+  day,
+  assignments = [],
+  isActive,
+  onAdd,
+  onEdit,
+  isManager,
+  isToday,
+  holiday,
+  isTouchDevice,
+  isSevenColumn,
+}) => {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${day.date}` });
   const dateObj = parseISOToDate(day.date);
+  const holidayInfo = holiday || getSingaporeHoliday(day.date);
+  const hasAssignments = (assignments || []).length > 0;
+  const shiftSummary = hasAssignments
+    ? `${assignments.length} shift${assignments.length === 1 ? '' : 's'}`
+    : 'No assignments yet';
+
+  const positionedAssignments = (assignments || []).map((assignment) => {
+    const metrics = calculateTimelineMetrics(assignment.start, assignment.end);
+    if (!metrics) return null;
+
+    let topPercent = Math.max(0, Math.min(metrics.top, 100 - MIN_TIMELINE_BLOCK_PERCENT));
+    let availableSpace = Math.max(0, 100 - topPercent);
+    let heightPercent = Math.max(Math.min(metrics.height, availableSpace), MIN_TIMELINE_BLOCK_PERCENT);
+
+    if (topPercent + heightPercent > 100) {
+      const overflow = topPercent + heightPercent - 100;
+      topPercent = Math.max(0, topPercent - overflow);
+      availableSpace = Math.max(0, 100 - topPercent);
+      heightPercent = Math.max(Math.min(heightPercent, availableSpace), MIN_TIMELINE_BLOCK_PERCENT);
+    }
+
+    return {
+      assignment,
+      style: {
+        top: `${topPercent}%`,
+        height: `${heightPercent}%`,
+      },
+    };
+  }).filter(Boolean);
+
+  const formattedDate = Number.isNaN(dateObj.getTime())
+    ? day.date
+    : dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
   return (
     <div
       ref={setNodeRef}
       className={classNames(
-  'flex min-h-[14rem] flex-col gap-3 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-4 shadow-sm transition',
-  isOver ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : '',
-  isActive ? 'border-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] bg-[color-mix(in_srgb,var(--app-info)_6%,_var(--app-surface)_94%)]' : ''
+        'relative flex min-h-[24rem] flex-col gap-4 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-4 shadow-sm transition',
+        isOver ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : '',
+        isActive ? 'border-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)]' : '',
+        holidayInfo ? 'border-[color-mix(in_srgb,var(--app-warning)_45%,_transparent_55%)] bg-[color-mix(in_srgb,var(--app-warning)_8%,_var(--app-surface)_92%)]' : '',
+        isToday
+          ? 'border-[color-mix(in_srgb,var(--app-primary)_55%,_transparent_45%)] bg-[color-mix(in_srgb,var(--app-primary)_10%,_var(--app-surface)_90%)] shadow-[0_0_55px_0_color-mix(in_srgb,var(--app-primary)_38%,_transparent_62%)] ring-2 ring-[color-mix(in_srgb,var(--app-primary)_50%,_transparent_50%)] ring-offset-4 ring-offset-[color-mix(in_srgb,var(--app-bg)_92%,_var(--app-surface)_8%)]'
+          : ''
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-sm font-semibold text-[var(--app-text)]">
-            {dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-          </div>
-          <div className="text-xs text-[var(--app-muted)]">{assignments.length} shift{assignments.length === 1 ? '' : 's'}</div>
+      <div className="flex items-start justify-between gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)] px-2 py-1 text-left min-h-[5.5rem]">
+        <div className="flex flex-1 min-w-0 flex-col gap-1">
+          <div className="text-sm font-semibold text-[var(--app-text)]">{formattedDate}</div>
+          <div className="text-xs text-[var(--app-muted)] whitespace-nowrap overflow-hidden text-ellipsis">{shiftSummary}</div>
+          {holidayInfo ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--app-warning)]">
+              <span className="rounded-full bg-[color-mix(in_srgb,var(--app-warning)_14%,_var(--app-surface)_86%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-warning)]">
+                Holiday
+              </span>
+              <span className="truncate" title={holidayInfo.name}>
+                {holidayInfo.name}
+              </span>
+              {holidayInfo.observed ? <span className="text-[var(--app-muted)]">(Observed)</span> : null}
+            </div>
+          ) : null}
         </div>
         {isManager ? (
           <button
@@ -85,16 +205,87 @@ const DayColumn = ({ day, assignments, isActive, onAdd, onEdit, isManager }) => 
           </button>
         ) : null}
       </div>
-      <div className="flex flex-1 flex-col gap-3">
-        {assignments.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)] p-3 text-center text-xs text-[var(--app-muted)]">
-            No assignments yet
+
+      <div className="flex-1">
+        <div className="relative min-h-[22rem]">
+          {!isSevenColumn ? (
+            <div className="absolute inset-y-0 left-0 w-16 select-none">
+              {TIMELINE_MARKERS.map((marker) => {
+                const baseStyle =
+                  marker.position <= 0
+                    ? { top: 0 }
+                    : marker.position >= 100
+                    ? { bottom: 0 }
+                    : { top: `${marker.position}%`, transform: 'translateY(-50%)' };
+
+                return (
+                  <div
+                    key={`label-${marker.hour}`}
+                    className="absolute right-3 text-right text-[10px] font-semibold uppercase tracking-wide text-[var(--app-muted)]"
+                    style={baseStyle}
+                  >
+                    {marker.label}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <div
+            className={classNames(
+              'relative ml-0 rounded-xl border border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)]',
+              isSevenColumn ? '' : 'ml-16'
+            )}
+            style={{ minHeight: '22rem' }}
+          >
+            <div className="pointer-events-none absolute inset-0 z-0 px-4">
+              {TIMELINE_MARKERS.map((marker) => {
+                const baseStyle =
+                  marker.position <= 0
+                    ? { top: 0 }
+                    : marker.position >= 100
+                    ? { bottom: 0 }
+                    : { top: `${marker.position}%`, transform: 'translateY(-50%)' };
+
+                return (
+                  <div key={`line-${marker.hour}`} className="absolute left-0 right-0" style={baseStyle}>
+                    {isSevenColumn ? (
+                      <div className="flex items-center gap-2">
+                        <span className="h-px flex-1 border-t border-dashed border-[rgba(15,23,42,0.12)]" />
+                        <span className="rounded-full bg-[color-mix(in_srgb,var(--app-surface)_94%,_var(--app-bg)_6%)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--app-muted)]">
+                          {marker.label}
+                        </span>
+                        <span className="h-px flex-1 border-t border-dashed border-[rgba(15,23,42,0.12)]" />
+                      </div>
+                    ) : (
+                      <div className="h-px w-full border-t border-dashed border-[rgba(15,23,42,0.12)]" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div
+              className={classNames(
+                'relative z-10 h-full overflow-hidden rounded-xl px-4',
+                isSevenColumn ? '' : ''
+              )}
+              style={{ minHeight: '22rem' }}
+            >
+              {positionedAssignments.map(({ assignment, style }) => (
+                <div key={assignment.id} className="absolute inset-x-0 px-1" style={style}>
+                  <ShiftCard
+                    assignment={assignment}
+                    isManager={isManager}
+                    onEdit={onEdit}
+                    style={{ height: '100%' }}
+                    isTouchDevice={isTouchDevice}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        ) : (
-          assignments.map((assignment) => (
-            <ShiftCard key={assignment.id} assignment={assignment} isManager={isManager} onEdit={onEdit} />
-          ))
-        )}
+        </div>
       </div>
     </div>
   );
@@ -116,6 +307,36 @@ export default function ScheduleCalendar({
 }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isSevenColumn, setIsSevenColumn] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(min-width: 1280px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    const isTouch =
+      'ontouchstart' in window ||
+      (nav && Number(nav.maxTouchPoints) > 0) ||
+      (window.matchMedia && window.matchMedia('(hover: none)').matches);
+    setIsTouchDevice(Boolean(isTouch));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(min-width: 1280px)');
+    const handleChange = (event) => setIsSevenColumn(event.matches);
+
+    setIsSevenColumn(mediaQuery.matches);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -179,6 +400,14 @@ export default function ScheduleCalendar({
     [activeAssignment, onMoveShift]
   );
 
+  const todayString = useMemo(() => toDateInputValue(new Date()), []);
+  const isSameDate = useCallback((a, b) => {
+    if (!a || !b) return false;
+    const d1 = toDateInputValue(parseISOToDate(a));
+    const d2 = toDateInputValue(parseISOToDate(b));
+    return d1 === d2;
+  }, []);
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -207,7 +436,7 @@ export default function ScheduleCalendar({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
           {loading
             ? Array.from({ length: 7 }).map((_, idx) => (
-                <div key={idx} className="h-52 animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_85%,_var(--app-bg)_15%)]" />
+                <div key={idx} className="h-[22rem] animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_85%,_var(--app-bg)_15%)]" />
               ))
             : dayAssignments.map((day) => (
                 <DayColumn
@@ -218,6 +447,10 @@ export default function ScheduleCalendar({
                   onEdit={onEditShift}
                   isManager={isManager}
                   isActive={overId === `day-${day.date}`}
+                  isToday={isSameDate(day.date, todayString)}
+                  holiday={day.holiday}
+                  isTouchDevice={isTouchDevice}
+                  isSevenColumn={isSevenColumn}
                 />
               ))}
         </div>

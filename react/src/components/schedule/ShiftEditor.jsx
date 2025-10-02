@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import Modal from './Modal';
 import { statusOptions, toDateInputValue, toTimeInputValue, startOfWeek } from './scheduleHelpers';
 
 const defaultTimes = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '16:00', '18:00', '20:00'];
@@ -89,29 +90,7 @@ export default function ShiftEditor({
   const times = useMemo(() => timeOptions(), []);
   const statuses = statusOptions();
 
-  useEffect(() => {
-    if (!open || typeof document === 'undefined') return undefined;
-    const { overflow } = document.body.style;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = overflow;
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && typeof onClose === 'function') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   const labelClass = 'flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]';
   const controlClass =
@@ -124,12 +103,9 @@ export default function ShiftEditor({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-[color:rgba(6,6,20,0.45)] px-4 py-10 backdrop-blur-sm sm:py-12"
-      onClick={handleBackdropClick}
-    >
+    <Modal onClose={onClose} className="w-full max-w-4xl">
       <div
-        className="relative flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-3xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] shadow-[0_30px_60px_0_rgba(6,6,20,0.22)]"
+        className="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-3xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] shadow-[0_30px_60px_0_rgba(6,6,20,0.22)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="shift-editor-title"
@@ -142,7 +118,7 @@ export default function ShiftEditor({
           Close
         </button>
 
-  <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col">
+        <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col">
           <div className="px-6 pb-6 pt-8 sm:px-8">
             <header className="space-y-1">
               <h3 id="shift-editor-title" className="text-2xl font-semibold text-[var(--app-text)]">
@@ -319,6 +295,6 @@ export default function ShiftEditor({
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -110,35 +110,38 @@ export default function StaffAvailabilityCard({
     : 'Availability';
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">My availability</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{heading}</p>
+    <div className="flex h-full min-h-0 flex-col rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition">
+      <div className="px-6 pb-6 pt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-[var(--app-text)]">My availability</h3>
+            <p className="text-xs text-[var(--app-muted)]">{heading}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!hasChanges || isSaving || isLoading}
+            className="text-xs font-semibold text-[var(--app-muted)] transition hover:text-[var(--app-text)] disabled:opacity-50"
+          >
+            Reset
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleReset}
-          disabled={!hasChanges || isSaving || isLoading}
-          className="text-xs font-semibold text-slate-400 transition hover:text-slate-600 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300"
-        >
-          Reset
-        </button>
       </div>
 
+      {/* scrollable content area */}
       {isLoading ? (
-        <div className="mt-6 space-y-3">
+        <div className="px-6 mt-6 flex-1 min-h-0 overflow-y-auto space-y-3">
           {Array.from({ length: 3 }).map((_, idx) => (
             <div
               key={idx}
-              className="h-16 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800"
+              className="h-16 animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)]"
             />
           ))}
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
+        <div className="px-6 mt-6 flex-1 min-h-0 overflow-y-auto space-y-4">
           {draft.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+            <div className="rounded-2xl border border-dashed border-[rgba(15,23,42,0.06)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)] p-4 text-sm text-[var(--app-muted)]">
               No availability preferences recorded for this week yet.
             </div>
           ) : null}
@@ -147,14 +150,14 @@ export default function StaffAvailabilityCard({
             return (
               <div
                 key={entry.date}
-                className="rounded-2xl border border-slate-200 p-4 transition dark:border-slate-700 dark:bg-slate-900/40"
+                className="rounded-2xl border border-[rgba(15,23,42,0.08)] p-4 transition bg-[var(--app-surface)]"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
                       {formatDayLabel(entry.date)}
                     </div>
-                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                    <div className="text-xs text-[var(--app-muted)]">
                       Choose whether you're available for shifts on this day.
                     </div>
                   </div>
@@ -164,8 +167,8 @@ export default function StaffAvailabilityCard({
                       onClick={() => handleToggle(entry.date, true)}
                       className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                         status === true
-                          ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300'
-                          : 'border border-slate-200 text-slate-500 hover:border-emerald-200 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300'
+                          ? 'bg-[color-mix(in_srgb,var(--app-success)_12%,_var(--app-surface)_88%)] text-[var(--app-success)]'
+                          : 'border border-[rgba(15,23,42,0.08)] text-[var(--app-text)] hover:border-[color-mix(in_srgb,var(--app-success)_30%,_rgba(0,0,0,0))] hover:text-[var(--app-success)]'
                       }`}
                     >
                       Available
@@ -175,8 +178,8 @@ export default function StaffAvailabilityCard({
                       onClick={() => handleToggle(entry.date, false)}
                       className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                         status === false
-                          ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300'
-                          : 'border border-slate-200 text-slate-500 hover:border-rose-200 hover:text-rose-600 dark:border-slate-600 dark:text-slate-300 dark:hover:border-rose-400 dark:hover:text-rose-300'
+                          ? 'bg-[color-mix(in_srgb,var(--app-warning)_12%,_var(--app-surface)_88%)] text-[var(--app-warning)]'
+                          : 'border border-[rgba(15,23,42,0.08)] text-[var(--app-text)] hover:border-[color-mix(in_srgb,var(--app-warning)_30%,_rgba(0,0,0,0))] hover:text-[var(--app-warning)]'
                       }`}
                     >
                       Unavailable
@@ -184,13 +187,13 @@ export default function StaffAvailabilityCard({
                   </div>
                 </div>
                 <div className="mt-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
                     Notes
                     <textarea
                       value={entry.notes}
                       onChange={(event) => handleNoteChange(entry.date, event.target.value)}
                       rows={2}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 transition focus:border-blue-300 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-400"
+                      className="mt-1 w-full rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
                       placeholder="Optional context for the manager"
                     />
                   </label>
@@ -201,15 +204,17 @@ export default function StaffAvailabilityCard({
         </div>
       )}
 
-      <div className="mt-6 flex items-center justify-end">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!hasChanges || isSaving || isLoading || typeof onSave !== 'function'}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-400"
-        >
-          {isSaving ? 'Saving…' : 'Save availability'}
-        </button>
+      <div className="p-6 border-t border-[rgba(15,23,42,0.06)]">
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!hasChanges || isSaving || isLoading || typeof onSave !== 'function'}
+            className="rounded-lg bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? 'Saving…' : 'Save availability'}
+          </button>
+        </div>
       </div>
     </div>
   );

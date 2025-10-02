@@ -1,35 +1,121 @@
-# capstone
+# Capstone Platform
 
-Brief capstone project demonstrating a small full-stack web app with a Flask API, a Vite/React frontend, SQLite storage, and an nginx proxy. The codebase is dockerized for development and deployment; the Flask service intentionally keeps the database and API reachable only on the internal Docker network and is exposed externally through the proxy.
+Full‑stack restaurant management platform that combines a Flask API, a Vite/React frontend, SQLite storage, and an nginx reverse proxy. Everything is container‑friendly (Docker Compose) while remaining easy to develop locally with native tooling.
 
-Key components
+> 📚 Module documentation
+>
+> - [`README.md`](./flask/README.md) in `flask/` – backend tech stack, setup, and full API reference.
+> - [`README.md`](./react/README.md) in `react/` – frontend architecture, tooling, and developer workflow.
 
-- `flask/` — Flask backend, SQLite DB (data/app.db), DB schema (`db_schema.sql`) and helper scripts (`init_db.py`, `seed_data.py`, `migrate_db.py`, `convert_order_items.py`, `revert_order_items_created_at.py`).
-- `react/` — Vite + React front-end.
-- `proxy/` and `config/` — nginx proxy configuration used to expose only the proxy to the host network while keeping other services internal.
+## Architecture Overview
 
-Database & data
+| Component | Tech | Purpose |
+| --- | --- | --- |
+| Proxy (`proxy/`, `config/`) | nginx | Terminates HTTP, forwards traffic to Flask/React services, and shields internal network resources. |
+| API (`flask/`) | Python 3.11, Flask, SQLite, JWT | Provides authentication, menu management, scheduling, analytics, and order workflows. |
+| Frontend (`react/`) | React 18, Vite, React Router, TailwindCSS | Dashboard UI, schedule planner, menu editor, analytics surface for managers/staff. |
+| Data | SQLite (`flask/data/app.db`) | Lightweight relational storage seeded with demo users, menu items, schedules, and analytics data. |
 
-- The application uses SQLite (`flask/data/app.db`). The schema is defined in `flask/db_schema.sql` and is initialized by `flask/init_db.py`.
-- Seeders: `flask/seed_data.py` will create idempotent sample data (roles, users, menu items, orders). There is also a conversion helper `flask/convert_order_items.py` (legacy -> JSON order format) and `flask/revert_order_items_created_at.py` to revert a prior `created_at` column change if needed.
+![Architecture diagram](docs/media/architecture-overview.png) <!-- Optional: replace/remove if diagram unavailable -->
 
-Quick local commands (PowerShell)
+### Key Features
+
+- Role‑aware authentication (Admin, Manager, Staff, User) with JWT tokens and revocation list.
+- Rich scheduling UI with drag & drop, overlap detection, and coverage summaries.
+- Menu management (CRUD, image uploads, categories, availability toggles, search/filter).
+- Orders API + React panels for active cart and order history.
+- Analytics dashboard summarising revenue, staffing, and popular items.
+
+## Tech Stack
+
+| Layer | Primary Libraries |
+| --- | --- |
+| Backend | Flask, Flask-JWT-Extended, Flask-Limiter, Flask-CORS, SQLite3, Pillow (image handling) |
+| Frontend | React, Vite, React Router, TailwindCSS, React DnD, React Query-style hooks (custom), Axios-based HTTP client |
+| Tooling | Docker/Docker Compose, Pytest, React Testing Library + Vitest, ESLint, Prettier |
+
+## Development Setup
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+ (includes npm)
+- Optional: Docker Desktop (for containerised workflows)
+- PowerShell (on Windows) or any POSIX shell
+
+### 1. Backend (Flask)
 
 ```powershell
-# Initialize the DB (creates flask/data/app.db)
-python .\flask\init_db.py
-
-# Seed sample data (idempotent)
-python .\flask\seed_data.py
-
-# If the DB previously had a `created_at` column on order_items and you want to remove it:
-python .\flask\revert_order_items_created_at.py
-
-# Small verification (print counts and sample order_items)
-python -c "import sqlite3, json;db='flask/data/app.db';c=sqlite3.connect(db);cur=c.cursor();cur.execute('SELECT count(*) FROM orders');print('orders',cur.fetchone()[0]);cur.execute('SELECT count(*) FROM order_items');print('order_rows',cur.fetchone()[0]);cur.execute('SELECT order_id, items FROM order_items LIMIT 5');rows=cur.fetchall();print('\nSample order_items rows:');\nimport sys, json;\n[print(r[0], json.loads(r[1])) for r in rows];c.close()"
+cd flask
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python init_db.py
+python seed_data.py
+python app.py  # or: flask run --app app:create_app --debug
 ```
 
-Docker notes
+See [`flask/README.md`](./flask/README.md) for API usage, environment variables, and test commands.
 
-- The project includes Dockerfiles and a `docker-compose.yaml`. The intended network design places the Flask app and database on an internal Docker network and only exposes the proxy (nginx) to the host — see `docker-compose.yaml` and `proxy/nginx.conf`.
+### 2. Frontend (React)
+
+```powershell
+cd react
+npm install
+npm run dev
+```
+
+Visit <http://localhost:5173> (Vite default) while the Flask API runs on <http://localhost:5000>.
+
+Additional frontend details live in [`react/README.md`](./react/README.md).
+
+### 3. Full stack via Docker Compose
+
+```powershell
+docker compose up --build
+```
+
+- nginx proxy: <http://localhost:8080> (public entry point)
+- React dev server runs hot-reload behind the proxy
+- Flask API and SQLite are isolated on the docker network (`app-network`)
+
+## Testing & Quality
+
+| Target | Command |
+| --- | --- |
+| Backend unit/integration tests | `pytest` (run from `flask/` with virtualenv active) |
+| Frontend unit tests | `npm run test` (from `react/`) |
+| Frontend linting | `npm run lint` |
+| API smoke script | `python tools/api_smoke.py` |
+
+CI Recommendations:
+
+1. Run backend lint/tests (e.g., Ruff + Pytest) on each push.
+2. Run `npm ci` + `npm run lint` + `npm run build` for frontend.
+3. Optional: dockerised integration smoke using `docker compose up --build` in a GitHub Actions job.
+
+## Project Layout
+
+```text
+├── docker-compose.yaml
+├── flask/                  # API service (see module README)
+├── react/                  # Vite/React frontend (see module README)
+├── proxy/                  # nginx Dockerfile + config
+├── docs/                   # Architecture notes, plans, assets
+├── scripts/                # Utility scripts (linting, API checks)
+├── standup/                # Daily standup notes (auto-generated)
+└── tools/                  # CLI helpers (e.g. api_smoke.py)
+```
+
+## Deployment Notes
+
+- Docker images are defined per service (`flask/Dockerfile`, `react/Dockerfile`, `proxy/Dockerfile`).
+- For hosted deployments, pair Docker builds with a registry (GHCR/ECR) and orchestrate via Fly.io, Railway, or Render.
+- Proxy expects Flask service hostname `flask` and frontend `react` inside the Compose/Orchestrator network.
+
+Refer to [`docs/backend-fault-tolerance-plan.md`](./docs/backend-fault-tolerance-plan.md) for HA considerations and failover architecture ideas.
+
+---
+
+Maintained by the Capstone team. Contributions welcome—open an issue or submit a PR with clean lint/test runs.
 

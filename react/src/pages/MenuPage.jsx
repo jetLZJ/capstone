@@ -4,7 +4,6 @@ import { toast } from 'react-toastify';
 import {
   FiPlus,
   FiSearch,
-  FiPieChart,
   FiShoppingBag,
   FiEdit2,
   FiTrash2,
@@ -12,7 +11,12 @@ import {
   FiClock,
   FiTag,
   FiImage,
+  FiBookOpen,
+  FiCoffee,
+  FiHelpCircle,
 } from 'react-icons/fi';
+import { PiBowlFood } from 'react-icons/pi';
+import { LuCakeSlice, LuSalad } from 'react-icons/lu';
 import useAuth from '../hooks/useAuth';
 import useCustomerOrder from '../hooks/useCustomerOrder';
 import MenuEditor from '../components/menu/MenuEditor';
@@ -85,6 +89,53 @@ const categoryEmoji = (name) => {
     'Chef Specials': '⭐',
   };
   return map[name] || '🍲';
+};
+
+const resolveCategoryVisual = (name) => {
+  const normalized = (name || 'Uncategorized').toLowerCase();
+
+  if (normalized.includes('appet')) {
+    return {
+      Icon: LuSalad,
+      accent: 'text-[var(--app-info)]',
+      iconBg: 'bg-[rgba(56,189,248,0.18)]',
+      iconColor: 'text-[var(--app-info)]',
+    };
+  }
+
+  if (normalized.includes('bever') || normalized.includes('drink')) {
+    return {
+      Icon: FiCoffee,
+      accent: 'text-[var(--app-warning)]',
+      iconBg: 'bg-[rgba(251,191,36,0.22)]',
+      iconColor: 'text-[var(--app-warning)]',
+    };
+  }
+
+  if (normalized.includes('dessert') || normalized.includes('sweet')) {
+    return {
+      Icon: LuCakeSlice,
+      accent: 'text-[var(--app-violet)]',
+      iconBg: 'bg-[rgba(168,85,247,0.18)]',
+      iconColor: 'text-[var(--app-violet)]',
+    };
+  }
+
+  if (normalized.includes('main') || normalized.includes('entree') || normalized.includes('entrée')) {
+    return {
+      Icon: PiBowlFood,
+      accent: 'text-[var(--app-success)]',
+      iconBg: 'bg-[rgba(34,197,94,0.18)]',
+      iconColor: 'text-[var(--app-success)]',
+    };
+  }
+
+  return {
+    Icon: FiHelpCircle,
+    accent: 'text-[var(--app-primary)]',
+    iconBg: 'bg-[rgba(79,70,229,0.18)]',
+    iconColor: 'text-[var(--app-primary)]',
+  };
 };
 
 const LoadingState = ({ label = 'Loading menu…' }) => (
@@ -540,13 +591,15 @@ const MenuPage = () => {
   const adminView = (
     <section className="space-y-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-4">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(15,23,42,0.08)] text-2xl font-semibold text-[var(--app-primary)]">
-            $
+        <div className="flex items-start gap-4 lg:flex-1 lg:pr-8">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[rgba(79,70,229,0.14)] text-2xl text-[var(--app-primary)]">
+            <FiBookOpen />
           </span>
-          <div>
-            <h1 className="text-3xl font-semibold text-[var(--app-text)]">Menu Management System</h1>
-            <p className="mt-1 text-sm text-[var(--app-muted)]">Manage menu items, pricing, availability, and descriptions.</p>
+          <div className="flex-1 min-w-[260px]">
+            <h1 className="text-3xl font-semibold text-[var(--app-text)] lg:whitespace-nowrap">Menu Management System</h1>
+            <p className="mt-1 text-sm text-[color:color-mix(in_srgb,var(--app-muted)_78%,_var(--app-bg)_22%)]">
+              Manage menu items, pricing, availability, and descriptions.
+            </p>
           </div>
         </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
@@ -571,23 +624,32 @@ const MenuPage = () => {
       </header>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {categorySummaries.map((summary) => (
-          <article
-            key={summary.name}
-            className="rounded-3xl border border-[rgba(15,23,42,0.05)] bg-[var(--app-surface)] p-6 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[var(--app-muted)]">{summary.name || 'Uncategorized'}</p>
-                <p className="mt-3 text-3xl font-semibold text-[var(--app-text)]">{summary.available}/{summary.total}</p>
-                <p className="mt-1 text-xs text-[var(--app-muted)]">Available this week</p>
+        {categorySummaries.map((summary) => {
+          const { Icon, accent, iconBg, iconColor } = resolveCategoryVisual(summary.name);
+          return (
+            <article
+              key={summary.name || 'Uncategorized'}
+              className="rounded-3xl border border-[rgba(15,23,42,0.05)] bg-[var(--app-surface)] p-6 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--app-text)_70%,_var(--app-muted)_30%)]">
+                    {summary.name || 'Uncategorized'}
+                  </p>
+                  <p className={`mt-3 text-3xl font-semibold ${accent}`}>
+                    {summary.available}/{summary.total}
+                  </p>
+                  <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--app-muted)_85%,_var(--app-bg)_15%)]">
+                    Available this week
+                  </p>
+                </div>
+                <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${iconBg}`}>
+                  <Icon className={`text-xl ${iconColor}`} />
+                </span>
               </div>
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(15,23,42,0.05)] text-[var(--app-primary)]">
-                <FiPieChart />
-              </span>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap gap-2">

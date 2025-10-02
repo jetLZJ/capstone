@@ -117,14 +117,6 @@ export default function StaffAvailabilityCard({
             <h3 className="text-lg font-semibold text-[var(--app-text)]">My availability</h3>
             <p className="text-xs text-[var(--app-muted)]">{heading}</p>
           </div>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={!hasChanges || isSaving || isLoading}
-            className="text-xs font-semibold text-[var(--app-muted)] transition hover:text-[var(--app-text)] disabled:opacity-50"
-          >
-            Reset
-          </button>
         </div>
       </div>
 
@@ -205,15 +197,28 @@ export default function StaffAvailabilityCard({
       )}
 
       <div className="p-6 border-t border-[rgba(15,23,42,0.06)]">
-        <div className="flex items-center justify-end">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving || isLoading || typeof onSave !== 'function'}
-            className="rounded-lg bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? 'Saving…' : 'Save availability'}
-          </button>
+        <div className="flex items-center justify-between">
+          <div>
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={!hasChanges || isSaving || isLoading}
+              className="rounded-full border border-[rgba(15,23,42,0.12)] px-4 py-2 text-sm font-medium text-[var(--app-text)] transition hover:bg-[color-mix(in_srgb,var(--app-surface)_88%,_var(--app-bg)_12%)] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!hasChanges || isSaving || isLoading || typeof onSave !== 'function'}
+              className="rounded-lg bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? 'Saving…' : 'Save availability'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

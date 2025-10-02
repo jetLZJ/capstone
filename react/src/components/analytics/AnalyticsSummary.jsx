@@ -171,7 +171,8 @@ export default function AnalyticsSummary() {
     (async () => {
       try {
         setLoading(true);
-        const res = await authFetch('/api/analytics/summary');
+        const params = new URLSearchParams({ timeframe });
+        const res = await authFetch(`/api/analytics/summary?${params.toString()}`);
         if (!ignore) {
           setData(res?.data ?? res);
           setError(null);
@@ -187,7 +188,7 @@ export default function AnalyticsSummary() {
     return () => {
       ignore = true;
     };
-  }, [authFetch]);
+  }, [authFetch, timeframe]);
 
   useEffect(() => {
     let ignore = false;
@@ -217,81 +218,86 @@ export default function AnalyticsSummary() {
       return [];
     }
 
-    const avgOrderValue = data.total_orders ? data.total_revenue / data.total_orders : 0;
+    const comparison = timeframe === 'last_30' ? null : data.comparison;
+    const comparisonLabel = comparison?.label ?? 'vs previous period';
+
+    const buildDelta = (currentValue, previousValue) => {
+      if (!comparison || previousValue === undefined || previousValue === null) {
+        return null;
+      }
+      if (typeof previousValue !== 'number' || previousValue <= 0) {
+        return null;
+      }
+      const diff = currentValue - previousValue;
+      const pct = previousValue !== 0 ? (diff / previousValue) * 100 : 0;
+      const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+      const sign = direction === 'down' ? '−' : direction === 'up' ? '+' : '';
+      return {
+        direction,
+        label: `${sign}${Math.abs(pct).toFixed(1)}% ${comparisonLabel}`,
+      };
+    };
+
+    const totalRevenue = data.total_revenue ?? 0;
+    const totalOrders = data.total_orders ?? 0;
+    const averageOrderValue = data.average_order_value ?? (totalOrders ? totalRevenue / totalOrders : 0);
+    const customerScore = Number(data.customer_satisfaction ?? 4.7);
 
     return [
       {
         key: 'total-revenue',
         label: 'Total Revenue',
-        value: formatCurrency(data.total_revenue),
-        deltaLabel: '+12.5% from last week',
-        deltaDirection: 'up',
+        value: formatCurrency(totalRevenue),
         colorClass: 'text-[var(--app-success)]',
         icon: <FiDollarSign className="text-lg" />,
+        delta: buildDelta(totalRevenue, comparison?.total_revenue),
       },
       {
         key: 'total-orders',
         label: 'Total Orders',
-        value: data.total_orders.toLocaleString(),
-        deltaLabel: '+8.2% from last week',
-        deltaDirection: 'up',
+        value: Number(totalOrders || 0).toLocaleString(),
         colorClass: 'text-[var(--app-info)]',
         icon: <FiShoppingCart className="text-lg" />,
+        delta: buildDelta(totalOrders, comparison?.total_orders),
       },
       {
         key: 'average-order-value',
         label: 'Average Order Value',
-        value: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(avgOrderValue),
-        deltaLabel: '+3.8% from last week',
-        deltaDirection: 'up',
+        value: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(averageOrderValue || 0),
         colorClass: 'text-[var(--app-violet)]',
         icon: <FiTrendingUp className="text-lg" />,
+        delta: buildDelta(averageOrderValue || 0, comparison?.average_order_value),
       },
       {
         key: 'customer-satisfaction',
         label: 'Customer Satisfaction',
-        value: '4.7/5',
-        deltaLabel: '-0.1 from last week',
-        deltaDirection: 'down',
+        value: `${customerScore.toFixed(1)}/5`,
         colorClass: 'text-[var(--app-warning)]',
         icon: <FiSmile className="text-lg" />,
+        delta: null,
       },
     ];
-  }, [data]);
+  }, [data, timeframe]);
 
   const revenueTrend = useMemo(() => {
-    // Example trend data. In a real scenario, this would be fetched for the selected timeframe.
-    if (timeframe === 'last_week') {
-      return [
-        { day: 'Mon', revenue: 2600, orders: 28 },
-        { day: 'Tue', revenue: 3100, orders: 31 },
-        { day: 'Wed', revenue: 2900, orders: 29 },
-        { day: 'Thu', revenue: 3300, orders: 33 },
-        { day: 'Fri', revenue: 4100, orders: 38 },
-        { day: 'Sat', revenue: 4400, orders: 41 },
-        { day: 'Sun', revenue: 3000, orders: 30 },
-      ];
+    if (!data?.daily_trend?.length) {
+      return [];
     }
 
-    if (timeframe === 'last_30') {
-      return [
-        { day: 'Week 1', revenue: 18000, orders: 185 },
-        { day: 'Week 2', revenue: 19400, orders: 198 },
-        { day: 'Week 3', revenue: 21400, orders: 212 },
-        { day: 'Week 4', revenue: 22500, orders: 220 },
-      ];
-    }
+    const formatter = timeframe === 'last_30'
+      ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
+      : new Intl.DateTimeFormat('en-US', { weekday: 'short' });
 
-    return [
-      { day: 'Mon', revenue: 2800, orders: 32 },
-      { day: 'Tue', revenue: 3100, orders: 35 },
-      { day: 'Wed', revenue: 2900, orders: 30 },
-      { day: 'Thu', revenue: 3400, orders: 34 },
-      { day: 'Fri', revenue: 4200, orders: 38 },
-      { day: 'Sat', revenue: 4600, orders: 44 },
-      { day: 'Sun', revenue: 3100, orders: 29 },
-    ];
-  }, [timeframe]);
+    return data.daily_trend.map((entry) => {
+      const sourceDate = `${entry.date}T00:00:00`;
+      const label = formatter.format(new Date(sourceDate));
+      return {
+        day: label,
+        revenue: Number(entry.revenue ?? 0),
+        orders: Number(entry.orders ?? 0),
+      };
+    });
+  }, [data, timeframe]);
 
   const popularItems = useMemo(() => {
     if (!data?.top_selling?.length) return [];
@@ -403,14 +409,22 @@ export default function AnalyticsSummary() {
               <div>
                 <p className="text-sm font-medium text-[var(--app-muted)]">{metric.label}</p>
                 <div className={`mt-3 text-3xl font-semibold ${metric.colorClass}`}>{metric.value}</div>
-                <div
-                  className={`mt-2 inline-flex items-center gap-1 text-sm ${
-                    metric.deltaDirection === 'down' ? 'text-[var(--app-warning)]' : 'text-[var(--app-success)]'
-                  }`}
-                >
-                  <span aria-hidden="true">{metric.deltaDirection === 'down' ? '▼' : '▲'}</span>
-                  <span className="font-medium">{metric.deltaLabel}</span>
-                </div>
+                {metric.delta && (
+                  <div
+                    className={`mt-2 inline-flex items-center gap-1 text-sm ${
+                      metric.delta.direction === 'down'
+                        ? 'text-[var(--app-warning)]'
+                        : metric.delta.direction === 'neutral'
+                        ? 'text-[var(--app-muted)]'
+                        : 'text-[var(--app-success)]'
+                    }`}
+                  >
+                    <span aria-hidden="true">
+                      {metric.delta.direction === 'down' ? '▼' : metric.delta.direction === 'neutral' ? '—' : '▲'}
+                    </span>
+                    <span className="font-medium">{metric.delta.label}</span>
+                  </div>
+                )}
               </div>
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(15,23,42,0.05)] text-[var(--app-primary)]">
                 {metric.icon}
@@ -448,10 +462,16 @@ export default function AnalyticsSummary() {
             <div>
               <h2 className="text-xl font-semibold text-[var(--app-text)]">Daily Revenue Trend</h2>
               <p className="mt-2 text-sm text-[var(--app-muted)]">
-                Revenue and order count for the past week
+                Revenue and order count for the selected timeframe
               </p>
             </div>
-            <RevenueTrendChart data={revenueTrend} />
+            {revenueTrend.length === 0 ? (
+              <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-[rgba(15,23,42,0.08)] bg-[var(--app-bg)]">
+                <p className="text-sm text-[var(--app-muted)]">No revenue data available for this period.</p>
+              </div>
+            ) : (
+              <RevenueTrendChart data={revenueTrend} />
+            )}
           </div>
         )}
 

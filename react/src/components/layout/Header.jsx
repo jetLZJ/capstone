@@ -11,6 +11,7 @@ import {
 import useAuth from '../../hooks/useAuth';
 
 const ORDER_META_KEY = 'capstone-order-meta';
+const THEME_MODE_KEY = 'capstone-theme-mode';
 
 const readOrderMetaCount = () => {
   if (typeof window === 'undefined') return 0;
@@ -26,9 +27,19 @@ const readOrderMetaCount = () => {
   }
 };
 
+const getInitialDarkMode = () => {
+  if (typeof window === 'undefined') return false;
+  const stored = window.localStorage.getItem(THEME_MODE_KEY);
+  if (stored === 'dark') return true;
+  if (stored === 'light') return false;
+  return typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : false;
+};
+
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => getInitialDarkMode());
   const [orderCount, setOrderCount] = useState(() => readOrderMetaCount());
   const location = useLocation();
   const { isAuthenticated, logout, profile } = useAuth();
@@ -99,16 +110,17 @@ const Header = () => {
   const toggleMenu = () => setIsOpen((prev) => !prev);
 
   const toggleDarkMode = () => {
-    setDarkMode((prev) => {
-      const next = !prev;
-      if (next) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-      return next;
-    });
+    setDarkMode((prev) => !prev);
   };
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', darkMode);
+    }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_MODE_KEY, darkMode ? 'dark' : 'light');
+    }
+  }, [darkMode]);
 
   const handleLogout = async () => {
     setIsOpen(false);
@@ -132,6 +144,14 @@ const Header = () => {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] text-[var(--app-text)] transition hover:border-[var(--app-primary)]"
+                  aria-label="Toggle theme"
+                >
+                  {darkMode ? <FiSun className="text-base" /> : <FiMoon className="text-base" />}
+                </button>
                 <Link
                   to="/orders"
                   className="inline-flex items-center gap-2 rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[var(--app-primary)]"

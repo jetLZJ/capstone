@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node ./scripts/create-shims.js || true"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.2",
+  "@dnd-kit/core": "^6.0.7",
+  "@dnd-kit/sortable": "^7.0.2",
     "axios": "^1.6.2",
     "formik": "^2.4.6",
     "jwt-decode": "^4.0.0",
@@ -22,6 +26,11 @@
     "yup": "^1.7.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/react": "^14.0.0",
+    "jsdom": "^22.0.0",
+    "vitest": "^1.0.0",
+    "@rollup/wasm-node": "^4.24.0",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
@@ -32,6 +41,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.3",
     "postcss": "^8.5.6",
+    "lightningcss-wasm": "^1.24.0",
     "tailwindcss": "^4.1.13",
     "vite": "^5.0.0"
   }

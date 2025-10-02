@@ -120,6 +120,17 @@ const AuthService = {
       }
       throw error;
     }
+  },
+
+  updateProfile: async (updates = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!user.access_token) {
+      throw new Error('Not authenticated');
+    }
+    const response = await axios.patch(`${API_URL}/auth/me`, updates, {
+      headers: { Authorization: `Bearer ${user.access_token}` }
+    });
+    return response.data;
   }
 };
 

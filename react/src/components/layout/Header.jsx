@@ -1,143 +1,289 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FiMenu, FiX, FiMoon, FiSun } from 'react-icons/fi';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  FiMenu,
+  FiX,
+  FiMoon,
+  FiSun,
+  FiShoppingCart,
+  FiLogOut,
+} from 'react-icons/fi';
 import useAuth from '../../hooks/useAuth';
+
+const ORDER_META_KEY = 'capstone-order-meta';
+const THEME_MODE_KEY = 'capstone-theme-mode';
+
+const readOrderMetaCount = () => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(ORDER_META_KEY);
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw);
+    const total = Number(parsed?.count);
+    return Number.isFinite(total) && total > 0 ? total : 0;
+  } catch (err) {
+    console.warn('Failed to read order meta', err);
+    return 0;
+  }
+};
+
+const getInitialDarkMode = () => {
+  if (typeof window === 'undefined') return false;
+  const stored = window.localStorage.getItem(THEME_MODE_KEY);
+  if (stored === 'dark') return true;
+  if (stored === 'light') return false;
+  return typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : false;
+};
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => getInitialDarkMode());
+  const [orderCount, setOrderCount] = useState(() => readOrderMetaCount());
+  const location = useLocation();
   const { isAuthenticated, logout, profile } = useAuth();
-  
-  const toggleMenu = () => {
-    setIsOpen(!isOpen);
-  };
-  
+  const navigate = useNavigate();
+
+  const role = (profile?.role || '').toLowerCase();
+  const isUserRole = isAuthenticated && role === 'user';
+  const isManagerOrAdmin = ['manager', 'admin'].includes(role);
+  const isStaffOnly = ['staff', 'server'].includes(role) && !isManagerOrAdmin;
+
+  const staffNavItems = useMemo(
+    () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+    ],
+    [],
+  );
+
+  const managerNavItems = useMemo(
+    () => [
+      { label: 'Home', to: '/', isActive: (path) => path === '/' },
+      {
+        label: 'Menu',
+        to: '/menu',
+        isActive: (path) => ['/menu', '/orders', '/profile'].some((prefix) => path.startsWith(prefix)),
+      },
+      { label: 'Schedule', to: '/schedule', isActive: (path) => path.startsWith('/schedule') },
+      { label: 'Analytics', to: '/analytics', isActive: (path) => path.startsWith('/analytics') },
+    ],
+    [],
+  );
+
+  const navItems = isAuthenticated ? (isStaffOnly ? staffNavItems : managerNavItems) : [];
+
+  useEffect(() => {
+    const updateFromStorage = () => setOrderCount(readOrderMetaCount());
+    const updateFromEvent = (event) => {
+      if (event?.detail && typeof event.detail.count !== 'undefined') {
+        const next = Number(event.detail.count);
+        setOrderCount(Number.isFinite(next) && next > 0 ? next : 0);
+      } else {
+        updateFromStorage();
+      }
+    };
+
+    updateFromStorage();
+    window.addEventListener('storage', updateFromStorage);
+    window.addEventListener('order-meta-updated', updateFromEvent);
+
+    return () => {
+      window.removeEventListener('storage', updateFromStorage);
+      window.removeEventListener('order-meta-updated', updateFromEvent);
+    };
+  }, []);
+
+  useEffect(() => {
+    setOrderCount(readOrderMetaCount());
+  }, [location.pathname]);
+
+  const userNavItems = useMemo(
+    () => [
+      { label: 'Browse Menu', to: '/menu' },
+      { label: 'My Order', to: '/orders' },
+      { label: 'Profile', to: '/profile' },
+    ],
+    [],
+  );
+
+  const toggleMenu = () => setIsOpen((prev) => !prev);
+
   const toggleDarkMode = () => {
-    const newDarkMode = !darkMode;
-    setDarkMode(newDarkMode);
-    
-    if (newDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    setDarkMode((prev) => !prev);
   };
-  
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', darkMode);
+    }
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_MODE_KEY, darkMode ? 'dark' : 'light');
+    }
+  }, [darkMode]);
+
+  const handleLogout = async () => {
+    setIsOpen(false);
+    await logout();
+    navigate('/');
+  };
+
+  if (isUserRole) {
+    return (
+      <header className="bg-[var(--app-surface)] shadow-sm">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <Link to="/menu" className="flex items-center gap-3">
+                  <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-10 w-10 rounded-full object-cover" />
+                  <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
+                </Link>
+                <p className="mt-1 text-sm text-[var(--app-muted)]">
+                  Welcome back, {profile?.first_name || 'Guest'}
+                  {profile?.email ? ` • ${profile.email}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] text-[var(--app-text)] transition hover:border-[var(--app-primary)]"
+                  aria-label="Toggle theme"
+                >
+                  {darkMode ? <FiSun className="text-base" /> : <FiMoon className="text-base" />}
+                </button>
+                <Link
+                  to="/orders"
+                  className="inline-flex items-center gap-2 rounded-full border border-[rgba(15,23,42,0.12)] bg-[var(--app-surface)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[var(--app-primary)]"
+                >
+                  <FiShoppingCart className="text-base" />
+                  Order{orderCount ? ` (${orderCount})` : ''}
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
+                >
+                  <FiLogOut className="text-base" />
+                  Logout
+                </button>
+              </div>
+            </div>
+            <nav className="flex rounded-full bg-[rgba(15,23,42,0.05)] p-1 text-sm font-medium">
+              {userNavItems.map((item) => {
+                const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`flex-1 rounded-full px-5 py-2 text-center transition ${
+                      isActive
+                        ? 'bg-[var(--app-text)] text-white shadow'
+                        : 'text-[var(--app-muted)] hover:text-[var(--app-text)]'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-md">
+    <header className="bg-[var(--app-surface)] shadow-md">
       <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center py-4">
-          {/* Logo */}
-          <Link to="/" className="text-2xl font-bold text-primary-600 font-serif">
-            RestaurantManager
+        <div className="flex items-center justify-between py-4">
+          <Link to="/" className="flex items-center gap-3">
+            <img src="/assets/bella-vista-logo.png" alt="Bella Vista" className="h-9 w-9 rounded-full object-cover" />
+            <span className="text-2xl font-semibold text-[var(--app-text)] font-serif">Bella Vista</span>
           </Link>
-          
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex space-x-6 items-center">
-            {isAuthenticated && (
-              <>
-                <Link to="/" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                  Home
-                </Link>
-                <Link to="/menu" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                  Menu
-                </Link>
-                <Link to="/schedule" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                  Schedule
-                </Link>
-                <Link to="/analytics" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                  Analytics
-                </Link>
-              </>
-            )}
-            
-            <button 
+
+          <nav className="hidden items-center space-x-6 md:flex">
+            {isAuthenticated &&
+              navItems.map((item) => {
+                const active = item.isActive ? item.isActive(location.pathname) : location.pathname === item.to;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`text-[var(--app-text)] transition hover:text-[var(--app-accent)] ${
+                      active ? 'font-semibold text-[var(--app-accent)]' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+
+            <button
               onClick={toggleDarkMode}
-              className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
+              className="text-[var(--app-text)] transition hover:text-[var(--app-accent)]"
               aria-label="Toggle dark mode"
             >
               {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
             </button>
-            
+
             {isAuthenticated ? (
-              <div className="relative group">
-                <button className="flex items-center space-x-2 text-gray-700 hover:text-primary-600 dark:text-gray-300">
-                  <span>{profile?.first_name || 'User'}</span>
-                </button>
-                <div className="absolute right-0 w-48 mt-2 py-2 bg-white dark:bg-gray-800 rounded-md shadow-xl z-20 hidden group-hover:block">
-                  <Link to="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
-                    Profile
-                  </Link>
-                  <button 
-                    onClick={logout}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
+              <button
+                onClick={handleLogout}
+                className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
+              >
+                Logout
+              </button>
             ) : (
               <Link to="/login" className="btn btn-primary">
                 Login
               </Link>
             )}
           </nav>
-          
-          {/* Mobile Menu Button */}
-          <button
-            className="md:hidden text-gray-700 dark:text-gray-300"
-            onClick={toggleMenu}
-            aria-label="Toggle menu"
-          >
+
+          <button className="text-[var(--app-text)] md:hidden" onClick={toggleMenu} aria-label="Toggle menu">
             {isOpen ? <FiX size={24} /> : <FiMenu size={24} />}
           </button>
         </div>
-        
-        {/* Mobile Navigation */}
+
         {isOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="border-t py-4 md:hidden">
             <div className="flex flex-col space-y-4">
               {isAuthenticated ? (
                 <>
-                  <Link to="/" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                    Home
-                  </Link>
-                  <Link to="/menu" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                    Menu
-                  </Link>
-                  <Link to="/schedule" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                    Schedule
-                  </Link>
-                  <Link to="/analytics" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                    Analytics
-                  </Link>
-                  <hr className="border-gray-200 dark:border-gray-700" />
-                  <Link to="/profile" className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400">
-                    Profile
-                  </Link>
-                  <button 
-                    onClick={logout}
-                    className="text-left text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
+                  {navItems.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="text-[var(--app-text)] hover:text-[var(--app-accent)]"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                  <button
+                    onClick={handleLogout}
+                    className="text-left text-[var(--app-text)] hover:text-[var(--app-accent)]"
                   >
                     Logout
                   </button>
                 </>
               ) : (
-                <Link to="/login" className="text-primary-600">
+                <Link to="/login" className="text-[var(--app-accent)]">
                   Login / Register
                 </Link>
               )}
-              
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={toggleDarkMode}
-                  className="text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400"
-                  aria-label="Toggle dark mode"
-                >
-                  {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
-                  <span className="ml-2">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
-                </button>
-              </div>
+
+              <button
+                onClick={toggleDarkMode}
+                className="flex items-center space-x-2 text-[var(--app-text)] hover:text-[var(--app-accent)]"
+                aria-label="Toggle dark mode"
+              >
+                {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
+                <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+              </button>
             </div>
           </div>
         )}

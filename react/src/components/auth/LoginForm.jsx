@@ -4,26 +4,23 @@ import * as Yup from 'yup';
 import useAuth from '../../hooks/useAuth';
 import { toast } from 'react-toastify';
 
-const LoginForm = ({ onSuccess }) => {
+const LoginForm = ({ onSuccess, role: _role = 'user', portal = 'customer' }) => {
   const { login } = useAuth();
+  const portalKey = portal === 'staff' ? 'staff' : 'customer';
+  const isStaffPortal = portalKey === 'staff';
   const [loading, setLoading] = useState(false);
 
   const formik = useFormik({
-    initialValues: {
-      email: '',
-      password: ''
-    },
+    initialValues: { email: '', password: '' },
     validationSchema: Yup.object({
-      email: Yup.string()
-        .email('Invalid email address')
-        .required('Email is required'),
-      password: Yup.string()
-        .required('Password is required')
+      email: Yup.string().email('Invalid email address').required('Email is required'),
+      password: Yup.string().required('Password is required')
     }),
     onSubmit: async (values) => {
       setLoading(true);
       try {
-        await login(values);
+        const payload = { email: values.email, password: values.password };
+        await login(payload, { portal: portalKey });
         toast.success('Login successful');
         if (onSuccess) onSuccess();
       } catch (error) {
@@ -39,15 +36,15 @@ const LoginForm = ({ onSuccess }) => {
     <div className="w-full max-w-md">
       <form onSubmit={formik.handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Email
+          <label htmlFor="email" className="block text-sm font-medium text-[var(--app-text)]">
+            {isStaffPortal ? 'Work Email' : 'Email'}
           </label>
           <input
             id="email"
             name="email"
             type="email"
             autoComplete="email"
-            placeholder="Enter your email"
+            placeholder={isStaffPortal ? 'name@restaurant.com' : 'Enter your email'}
             className={`mt-1 input ${formik.touched.email && formik.errors.email ? 'border-red-500' : ''}`}
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
@@ -60,7 +57,7 @@ const LoginForm = ({ onSuccess }) => {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="password" className="block text-sm font-medium text-[var(--app-text)]">
             Password
           </label>
           <input

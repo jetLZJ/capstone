@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS shifts (
   start_time TEXT,
   end_time TEXT,
   created_by INTEGER,
+  recurrence_rule TEXT,
+  default_status TEXT DEFAULT 'scheduled',
+  default_duration INTEGER,
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
@@ -92,10 +95,21 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
   shift_id INTEGER,
   assigned_user INTEGER,
   shift_date DATE,
+  start_time TEXT,
+  end_time TEXT,
   role TEXT,
+  status TEXT DEFAULT 'scheduled',
+  notes TEXT,
+  recurrence_parent_id INTEGER,
+  schedule_week_start DATE,
+  created_at DATETIME DEFAULT (datetime('now')),
+  updated_at DATETIME,
   FOREIGN KEY (shift_id) REFERENCES shifts(id),
   FOREIGN KEY (assigned_user) REFERENCES users(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_shift_assignments_user_date ON shift_assignments (assigned_user, shift_date);
+CREATE INDEX IF NOT EXISTS idx_shift_assignments_week ON shift_assignments (schedule_week_start);
 
 -- Seed some common values
 INSERT OR IGNORE INTO types (name) VALUES ('Appetizer'), ('Main'), ('Dessert'), ('Beverage');

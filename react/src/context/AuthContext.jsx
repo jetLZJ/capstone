@@ -1,11 +1,7 @@
 import { createContext, useReducer, useEffect, useCallback } from 'react';
 import AuthService from '../services/AuthService';
 import httpClient from '../utils/httpClient';
-import * as jwtDecodeModule from 'jwt-decode';
-// Some distributions of `jwt-decode` don't provide a default export when bundled
-// (Vite/Rollup can expose only named exports). Use a safe fallback so both ESM
-// and CJS consumers work:
-const jwtDecode = jwtDecodeModule?.default ?? jwtDecodeModule;
+import { jwtDecode } from 'jwt-decode';
 
 // Initial state
 const initialState = {
@@ -132,18 +128,36 @@ export const AuthProvider = ({ children }) => {
   }, [initializeAuth]);
 
   // Login function
-  const login = async (credentials) => {
+  const login = async (credentials, options = {}) => {
     dispatch({ type: ACTIONS.AUTH_START });
+    const portal = options.portal === 'staff' ? 'staff' : 'customer';
     try {
       const userData = await AuthService.login(credentials);
-      dispatch({ type: ACTIONS.AUTH_SUCCESS, payload: userData });
-      
-      // Load user profile
-      const profile = await AuthService.getCurrentUser();
-      if (profile) {
-        dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+
+      let profile;
+      try {
+        profile = await AuthService.getCurrentUser();
+      } catch (profileError) {
+        localStorage.removeItem('user');
+        throw new Error('Unable to verify your profile. Please try again.');
       }
-      
+
+      const role = (profile?.role || '').toLowerCase();
+      const isStaffRole = ['admin', 'manager', 'staff'].includes(role);
+      const isCustomerRole = role === 'user';
+
+      const allowed = portal === 'staff' ? isStaffRole : isCustomerRole;
+      if (!allowed) {
+        localStorage.removeItem('user');
+        const message = portal === 'staff'
+          ? 'Customer accounts must sign in through the customer portal.'
+          : 'Please use the staff portal to sign in with this account.';
+        throw new Error(message);
+      }
+
+      dispatch({ type: ACTIONS.AUTH_SUCCESS, payload: userData });
+      dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+
       return userData;
     } catch (error) {
       dispatch({ type: ACTIONS.AUTH_ERROR, payload: error.message || 'Login failed' });
@@ -192,6 +206,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateProfile = async (updates) => {
+    try {
+      const profile = await AuthService.updateProfile(updates);
+      if (profile) {
+        dispatch({ type: ACTIONS.AUTH_PROFILE_LOADED, payload: profile });
+      }
+      return profile;
+    } catch (error) {
+      const message = error?.response?.data?.msg || error?.message || 'Failed to update profile';
+      throw new Error(message);
+    }
+  };
+
   // authFetch: wrapper around http client so components can use a consistent API
   const authFetch = useCallback(async (url, options = {}) => {
     // httpClient follows axios signature: (url, config)
@@ -207,7 +234,8 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         refreshToken,
-        initializeAuth
+        initializeAuth,
+        updateProfile
       }}
     >
       {children}

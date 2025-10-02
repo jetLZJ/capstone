@@ -18,10 +18,13 @@ import LoadingSpinner from './components/ui/LoadingSpinner';
 
 // Lazy-loaded components
 const MenuPage = lazy(() => import('./pages/MenuPage'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage'));
 
 function App() {
   return (
@@ -36,22 +39,36 @@ function App() {
               
               {/* Protected Routes */}
               <Route path="/menu" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager','User']}>
                   <MenuPage />
                 </ProtectedRoute>
               } />
+              <Route path="/orders" element={
+                <ProtectedRoute allowedRoles={['User']}>
+                  <OrdersPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/profile" element={
+                <ProtectedRoute allowedRoles={['User']}>
+                  <ProfilePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/menu/orders" element={<Navigate to="/orders" replace />} />
+              <Route path="/menu/profile" element={<Navigate to="/profile" replace />} />
+              <Route path="/menu/*" element={<Navigate to="/menu" replace />} />
               <Route path="/schedule" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager','Staff','Server']}>
                   <SchedulePage />
                 </ProtectedRoute>
               } />
               <Route path="/analytics" element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['Admin','Manager']}>
                   <AnalyticsPage />
                 </ProtectedRoute>
               } />
               
               {/* Not Found Route */}
+              <Route path="/unauthorized" element={<UnauthorizedPage />} />
               <Route path="/404" element={<NotFoundPage />} />
               <Route path="*" element={<Navigate to="/404" />} />
             </Routes>

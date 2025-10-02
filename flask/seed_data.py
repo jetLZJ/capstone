@@ -244,17 +244,17 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         {
             'name': 'Morning Prep',
             'role_required': 'Kitchen',
-            'start_time': '07:00',
-            'end_time': '11:00',
-            'default_duration': 240,
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
         },
         {
             'name': 'Lunch Service',
             'role_required': 'Server',
-            'start_time': '11:00',
-            'end_time': '16:00',
-            'default_duration': 300,
+            'start_time': '12:00',
+            'end_time': '18:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
         },
         {
@@ -268,9 +268,9 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         {
             'name': 'Closing Shift',
             'role_required': 'Support',
-            'start_time': '20:00',
-            'end_time': '23:00',
-            'default_duration': 180,
+            'start_time': '14:00',
+            'end_time': '20:00',
+            'default_duration': 360,
             'recurrence_rule': 'FREQ=WEEKLY;BYDAY=FR,SA',
         },
     ]
@@ -280,7 +280,21 @@ def seed_shift_templates(conn: sqlite3.Connection) -> Dict[str, int]:
         cur.execute('SELECT id FROM shifts WHERE name=?', (template['name'],))
         row = cur.fetchone()
         if row:
+            cur.execute(
+                'UPDATE shifts SET role_required=?, start_time=?, end_time=?, created_by=?, recurrence_rule=?, default_status=?, default_duration=? WHERE id=?',
+                (
+                    template['role_required'],
+                    template['start_time'],
+                    template['end_time'],
+                    admin_id,
+                    template['recurrence_rule'],
+                    'scheduled',
+                    template['default_duration'],
+                    row[0],
+                ),
+            )
             name_to_id[template['name']] = row[0]
+            print('Updated shift template:', template['name'])
             continue
         cur.execute(
             'INSERT INTO shifts (name, role_required, start_time, end_time, created_by, recurrence_rule, default_status, default_duration)\n'
@@ -340,8 +354,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             'shift': 'Morning Prep',
             'staff_email': 'tina.staff@example.com',
             'day_offset': 0,
-            'start_time': '06:30',
-            'end_time': '10:30',
+            'start_time': '09:00',
+            'end_time': '15:00',
             'role': 'Kitchen',
             'note_variants': [
                 'Seasonal soup and pastry prep',
@@ -354,8 +368,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             'shift': 'Lunch Service',
             'staff_email': 'sam.staff@example.com',
             'day_offset': 0,
-            'start_time': '11:00',
-            'end_time': '15:30',
+            'start_time': '12:00',
+            'end_time': '18:00',
             'role': 'Server',
             'note_variants': [
                 'Corporate group reservations',
@@ -382,8 +396,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             'shift': 'Lunch Service',
             'staff_email': 'sam.staff@example.com',
             'day_offset': 3,
-            'start_time': '12:30',
-            'end_time': '16:00',
+            'start_time': '11:00',
+            'end_time': '17:00',
             'role': 'Server',
             'note_variants': [
                 'Extra coverage for tasting event',
@@ -393,25 +407,25 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             ],
         },
         {
-            'shift': 'Dinner Service',
-            'staff_email': 'sam.staff@example.com',
+            'shift': 'Closing Shift',
+            'staff_email': 'maya.manager@example.com',
             'day_offset': 4,
-            'start_time': '17:00',
-            'end_time': '22:30',
-            'role': 'Server',
+            'start_time': '14:00',
+            'end_time': '20:00',
+            'role': 'Support',
             'note_variants': [
-                'High-volume reservation block',
-                'Live music patio traffic',
-                'Chef tasting pop-up night',
-                'Anniversary celebrations',
+                'Front-of-house inventory sync',
+                'Weekly vendor coordination window',
+                'Service standards refresher',
+                'Guest feedback follow-up calls',
             ],
         },
         {
             'shift': 'Morning Prep',
             'staff_email': 'tina.staff@example.com',
             'day_offset': 5,
-            'start_time': '07:00',
-            'end_time': '11:00',
+            'start_time': '09:00',
+            'end_time': '15:00',
             'role': 'Kitchen',
             'note_variants': [
                 'Weekend brunch mise en place',
@@ -424,8 +438,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             'shift': 'Dinner Service',
             'staff_email': 'raj.staff@example.com',
             'day_offset': 5,
-            'start_time': '18:00',
-            'end_time': '23:00',
+            'start_time': '16:00',
+            'end_time': '22:00',
             'role': 'Server',
             'note_variants': [
                 'Saturday night double seating',
@@ -438,8 +452,8 @@ def seed_shift_assignments(conn: sqlite3.Connection, shift_ids: Dict[str, int]) 
             'shift': 'Closing Shift',
             'staff_email': 'maya.manager@example.com',
             'day_offset': 6,
-            'start_time': '20:00',
-            'end_time': '23:00',
+            'start_time': '14:00',
+            'end_time': '20:00',
             'role': 'Support',
             'note_variants': [
                 'Inventory audit and vendor notes',

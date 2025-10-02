@@ -9,6 +9,7 @@ import {
   startOfWeek,
   WORKING_DAY_END_MINUTES,
   WORKING_DAY_START_MINUTES,
+  MIN_SHIFT_DURATION_MINUTES,
 } from './scheduleHelpers';
 
 const emptyForm = (weekStart) => ({
@@ -106,6 +107,11 @@ export default function ShiftEditor({
 
     if (endMinutes <= startMinutes) {
       setLocalError('End time must be later than the start time.');
+      return;
+    }
+
+    if (endMinutes - startMinutes < MIN_SHIFT_DURATION_MINUTES) {
+      setLocalError('Shifts must be at least 6 hours long.');
       return;
     }
 

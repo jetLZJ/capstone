@@ -28,6 +28,9 @@ except Exception:  # pragma: no cover - fallback for local execution
 bp = Blueprint('schedule', __name__)
 
 STATUS_VALUES = {'scheduled', 'confirmed', 'pending', 'open'}
+WORKING_DAY_START_HOUR = 9
+WORKING_DAY_END_HOUR = 22
+MIN_SHIFT_DURATION_MINUTES = 6 * 60
 
 
 def ensure_schedule_schema() -> None:
@@ -131,6 +134,10 @@ def _start_of_week(target: Optional[date] = None) -> date:
 def _combine_datetime(day: date, hm: Tuple[int, int]) -> str:
     dt = datetime.combine(day, datetime.min.time()) + timedelta(hours=hm[0], minutes=hm[1])
     return dt.isoformat()
+
+
+def _minutes_since_midnight(hm: Tuple[int, int]) -> int:
+    return hm[0] * 60 + hm[1]
 
 
 def _coerce_int(value: Any) -> Optional[int]:
@@ -282,6 +289,18 @@ def _parse_assignment_payload(data: Dict[str, Any], week_start: date) -> Tuple[L
 
     if start_tuple >= end_tuple:
         return [], 'end_time must be after start_time'
+
+    start_minutes = _minutes_since_midnight(start_tuple)
+    end_minutes = _minutes_since_midnight(end_tuple)
+
+    if start_minutes < WORKING_DAY_START_HOUR * 60 or start_minutes >= WORKING_DAY_END_HOUR * 60:
+        return [], 'Shifts must start between 9:00 AM and 10:00 PM'
+
+    if end_minutes <= WORKING_DAY_START_HOUR * 60 or end_minutes > WORKING_DAY_END_HOUR * 60:
+        return [], 'Shifts must end between 9:00 AM and 10:00 PM'
+
+    if end_minutes - start_minutes < MIN_SHIFT_DURATION_MINUTES:
+        return [], 'Shifts must be at least 6 hours long'
 
     if status not in STATUS_VALUES:
         status = 'scheduled'
@@ -523,6 +542,18 @@ def update_assignment(assignment_id: int):
         return jsonify({'msg': 'start_time and end_time must be in HH:MM format'}), 400
     if start_tuple >= end_tuple:
         return jsonify({'msg': 'end_time must be after start_time'}), 400
+
+    start_minutes = _minutes_since_midnight(start_tuple)
+    end_minutes = _minutes_since_midnight(end_tuple)
+
+    if start_minutes < WORKING_DAY_START_HOUR * 60 or start_minutes >= WORKING_DAY_END_HOUR * 60:
+        return jsonify({'msg': 'Shifts must start between 9:00 AM and 10:00 PM'}), 400
+
+    if end_minutes <= WORKING_DAY_START_HOUR * 60 or end_minutes > WORKING_DAY_END_HOUR * 60:
+        return jsonify({'msg': 'Shifts must end between 9:00 AM and 10:00 PM'}), 400
+
+    if end_minutes - start_minutes < MIN_SHIFT_DURATION_MINUTES:
+        return jsonify({'msg': 'Shifts must be at least 6 hours long'}), 400
 
     start_iso = _combine_datetime(shift_date, start_tuple)
     end_iso = _combine_datetime(shift_date, end_tuple)

@@ -36,7 +36,8 @@ const TIMELINE_MARKERS = TIMELINE_HOURS.map((hour) => ({
 
 const MIN_TIMELINE_BLOCK_PERCENT = Math.max((15 / WORKING_DAY_TOTAL_MINUTES) * 100, 1.5);
 
-const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpenShift, style, isTouchDevice }) => {
+const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpenShift, tooltipSide = 'center', style, isTouchDevice }) => {
+  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
   const meta = statusMeta(assignment.status);
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `assignment-${assignment.id}`,
@@ -56,7 +57,7 @@ const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpen
     `Time: ${formatTimeRange(assignment.start, assignment.end)}`,
     assignment.notes ? `Notes: ${assignment.notes}` : null,
   ].filter(Boolean);
-  const tooltip = tooltipParts.join('\n');
+  const showTooltip = !isTouchDevice && isTooltipVisible && !isDragging && tooltipParts.length > 0;
 
   const handleDoubleClick = () => {
     if (allowEdit) {
@@ -87,23 +88,57 @@ const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpen
     }
   };
 
+  const bubbleAlignmentClass = tooltipSide === 'left'
+    ? 'left-0 translate-x-0 items-start'
+    : tooltipSide === 'right'
+    ? 'right-0 translate-x-0 items-end'
+    : 'left-1/2 -translate-x-1/2 items-center';
+
+  const tailAlignmentClass = tooltipSide === 'left'
+    ? 'self-start ml-6'
+    : tooltipSide === 'right'
+    ? 'self-end mr-6'
+    : 'self-center';
+
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
       className={classNames(
-        'flex h-full flex-col rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
+  'relative z-10 flex h-full flex-col rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
         isManager ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]' : 'cursor-default',
         isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
-  onDoubleClick={handleDoubleClick}
-  onKeyDown={handleKeyDown}
-  onClick={handleClick}
-  tabIndex={isInteractive ? 0 : undefined}
-      title={tooltip}
+      onDoubleClick={handleDoubleClick}
+      onKeyDown={handleKeyDown}
+      onClick={handleClick}
+      onMouseEnter={() => setIsTooltipVisible(true)}
+      onMouseLeave={() => setIsTooltipVisible(false)}
+      onFocus={() => setIsTooltipVisible(true)}
+      onBlur={() => setIsTooltipVisible(false)}
+      tabIndex={isInteractive ? 0 : undefined}
       style={style}
     >
+      {showTooltip ? (
+        <div
+          className={classNames(
+            'pointer-events-none absolute bottom-full z-40 flex flex-col gap-1 pb-3 transition duration-150 ease-out',
+            bubbleAlignmentClass
+          )}
+        >
+          <div className="flex flex-col gap-1">
+            <div className="w-[19rem] max-w-[22rem] rounded-2xl border border-[rgba(15,23,42,0.12)] bg-[color-mix(in_srgb,var(--app-surface)_96%,_var(--app-bg)_4%)] px-5 py-4 text-sm font-medium leading-5 text-[var(--app-text)] shadow-[0_16px_34px_-18px_rgba(15,23,42,0.35)]">
+              <ul className="space-y-1.5">
+                {tooltipParts.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+            <div className={classNames('h-3 w-3 rotate-45 border-r border-b border-[rgba(15,23,42,0.12)] bg-[color-mix(in_srgb,var(--app-surface)_96%,_var(--app-bg)_4%)]', tailAlignmentClass)} />
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className={classNames('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--app-text)_80%,_var(--app-bg)_20%)]', meta.bg)}>
@@ -145,6 +180,8 @@ const DayColumn = ({
   holiday,
   isTouchDevice,
   isSevenColumn,
+  columnIndex = 0,
+  totalColumns = 1,
 }) => {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${day.date}` });
   const dateObj = parseISOToDate(day.date);
@@ -287,24 +324,28 @@ const DayColumn = ({
 
             <div
               className={classNames(
-                'relative z-10 h-full overflow-hidden rounded-xl px-4',
+                'relative z-10 h-full overflow-visible rounded-xl px-4',
                 isSevenColumn ? '' : ''
               )}
               style={{ minHeight: '22rem' }}
             >
-              {positionedAssignments.map(({ assignment, style }) => (
-                <div key={assignment.id} className="absolute inset-x-0 px-1" style={style}>
-                  <ShiftCard
-                    assignment={assignment}
-                    isManager={isManager}
-                    onEdit={onEdit}
-                    onFillOpenShift={onFillOpenShift}
-                    canFillOpenShift={canFillOpenShift}
-                    style={{ height: '100%' }}
-                    isTouchDevice={isTouchDevice}
-                  />
-                </div>
-              ))}
+              {positionedAssignments.map(({ assignment, style }) => {
+                const tooltipSide = columnIndex === 0 ? 'left' : columnIndex === totalColumns - 1 ? 'right' : 'center';
+                return (
+                  <div key={assignment.id} className="absolute inset-x-0 px-1" style={style}>
+                    <ShiftCard
+                      assignment={assignment}
+                      isManager={isManager}
+                      onEdit={onEdit}
+                      onFillOpenShift={onFillOpenShift}
+                      canFillOpenShift={canFillOpenShift}
+                      tooltipSide={tooltipSide}
+                      style={{ height: '100%' }}
+                      isTouchDevice={isTouchDevice}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -462,7 +503,7 @@ export default function ScheduleCalendar({
             ? Array.from({ length: 7 }).map((_, idx) => (
                 <div key={idx} className="h-[22rem] animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_85%,_var(--app-bg)_15%)]" />
               ))
-            : dayAssignments.map((day) => (
+            : dayAssignments.map((day, idx) => (
                 <DayColumn
                   key={day.date}
                   day={day}
@@ -477,6 +518,8 @@ export default function ScheduleCalendar({
                   holiday={day.holiday}
                   isTouchDevice={isTouchDevice}
                   isSevenColumn={isSevenColumn}
+                  columnIndex={idx}
+                  totalColumns={dayAssignments.length}
                 />
               ))}
         </div>

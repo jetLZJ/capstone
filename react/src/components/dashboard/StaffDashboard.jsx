@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useDashboardData from './useDashboardData';
 import useAuth from '../../hooks/useAuth';
 import { formatDateTime } from '../../utils/formatters';
+import { toast } from 'react-toastify';
 
 const parseDate = (value, fallback) => {
   if (value) {
@@ -18,7 +19,32 @@ const parseDate = (value, fallback) => {
 
 const StaffDashboard = () => {
   const { profile } = useAuth();
-  const { loading, error, schedule, refresh } = useDashboardData({ includeSchedule: true });
+  const {
+    loading,
+    error,
+    schedule,
+    refresh,
+    notifications = [],
+    acknowledgeNotification: acknowledgeNotificationFromHook,
+  } = useDashboardData({ includeSchedule: true, includeNotifications: true });
+  const [ackPendingId, setAckPendingId] = useState(null);
+
+  const notificationsList = Array.isArray(notifications) ? notifications : [];
+  const hasNotifications = notificationsList.length > 0;
+  const canAcknowledge = typeof acknowledgeNotificationFromHook === 'function';
+
+  const handleAcknowledge = async (notificationId) => {
+    if (!canAcknowledge) return;
+    setAckPendingId(notificationId);
+    try {
+      await acknowledgeNotificationFromHook(notificationId);
+    } catch (err) {
+      const message = err?.response?.data?.msg || err?.message || 'Unable to acknowledge notification';
+      toast.error(message);
+    } finally {
+      setAckPendingId(null);
+    }
+  };
 
   const coverage = schedule?.coverage;
   const totalAssigned = (coverage?.confirmed ?? 0) + (coverage?.scheduled ?? 0);
@@ -82,6 +108,50 @@ const StaffDashboard = () => {
         <h1 className="text-3xl font-semibold text-[var(--app-text)]">Welcome back, {profile?.first_name || 'Team member'}!</h1>
         <p className="text-[var(--app-muted)]">Here’s a quick look at your upcoming shifts and weekly coverage.</p>
       </header>
+
+      <section className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-[var(--app-text)]">Shift notifications</h2>
+          {hasNotifications ? (
+            <span className="text-xs uppercase tracking-wide text-[var(--app-muted)]">{notificationsList.length} new</span>
+          ) : null}
+        </div>
+        {hasNotifications ? (
+          <ul className="mt-4 space-y-3">
+            {notificationsList.map((note) => (
+              <li
+                key={note.id}
+                className="rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-4 shadow-sm"
+              >
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-[var(--app-text)]">{note.title || 'Shift update'}</p>
+                  {note.message ? <p className="text-sm text-[var(--app-muted)]">{note.message}</p> : null}
+                  {note.start_time ? (
+                    <p className="text-xs text-[var(--app-muted)]">Shift: {formatDateTime(note.start_time)}</p>
+                  ) : note.shift_date ? (
+                    <p className="text-xs text-[var(--app-muted)]">Shift date: {note.shift_date}</p>
+                  ) : null}
+                  {note.created_at ? (
+                    <p className="text-xs text-[var(--app-muted)]">Received {formatDateTime(note.created_at)}</p>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAcknowledge(note.id)}
+                    disabled={!canAcknowledge || ackPendingId === note.id}
+                    className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-xs font-semibold text-[var(--app-primary-contrast)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {ackPendingId === note.id ? 'Acknowledging…' : 'Acknowledge'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-[var(--app-muted)]">You're all caught up on shift changes.</p>
+        )}
+      </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm">

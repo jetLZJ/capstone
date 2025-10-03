@@ -50,6 +50,24 @@ def delete_assignment(client, token, assignment_id):
     assert rv.status_code == 204
 
 
+def list_notifications(client, token, include_ack=False):
+    query_string = {'include_acknowledged': 'true'} if include_ack else {}
+    rv = client.get(
+        '/api/schedules/notifications',
+        headers={'Authorization': f'Bearer {token}'},
+        query_string=query_string,
+    )
+    assert rv.status_code == 200
+    return rv.get_json()['notifications']
+
+
+def acknowledge_notification(client, token, notification_id):
+    return client.post(
+        f'/api/schedules/notifications/{notification_id}/ack',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+
 def _next_monday(base=None, weeks_ahead=0):
     base = base or date.today()
     days_until_monday = (7 - base.weekday()) % 7
@@ -281,3 +299,105 @@ def test_staff_claim_blocked_when_conflict(client):
     finally:
         delete_assignment(client, manager_token, conflicting_open_id)
         delete_assignment(client, manager_token, existing_shift_id)
+
+
+def test_staff_receives_notification_on_assignment_create(client):
+    staff_token = login(client, 'sam.staff@example.com')
+    staff_profile = get_profile(client, staff_token)
+    manager_token = login(client, 'maya.manager@example.com')
+
+    # Clear any existing notifications for a predictable baseline
+    for note in list_notifications(client, staff_token, include_ack=True):
+        acknowledge_notification(client, staff_token, note['id'])
+
+    target_date = _next_monday(weeks_ahead=3)
+    week_start = target_date - timedelta(days=target_date.weekday())
+
+    created_ids = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'staff_id': staff_profile['id'],
+            'role': 'Server',
+            'status': 'scheduled',
+        },
+    )
+    assignment_id = created_ids[0]
+
+    try:
+        notifications = list_notifications(client, staff_token)
+        matching = [note for note in notifications if int(note.get('assignment_id') or 0) == assignment_id]
+        assert matching
+        note_id = matching[0]['id']
+        ack_response = acknowledge_notification(client, staff_token, note_id)
+        assert ack_response.status_code == 200
+        remaining = list_notifications(client, staff_token)
+        assert all(note['id'] != note_id for note in remaining)
+    finally:
+        delete_assignment(client, manager_token, assignment_id)
+        for note in list_notifications(client, staff_token, include_ack=True):
+            if int(note.get('assignment_id') or 0) == assignment_id:
+                acknowledge_notification(client, staff_token, note['id'])
+
+
+def test_staff_receives_notification_on_assignment_update(client):
+    staff_token = login(client, 'sam.staff@example.com')
+    staff_profile = get_profile(client, staff_token)
+    manager_token = login(client, 'maya.manager@example.com')
+
+    for note in list_notifications(client, staff_token, include_ack=True):
+        acknowledge_notification(client, staff_token, note['id'])
+
+    target_date = _next_monday(weeks_ahead=4)
+    week_start = target_date - timedelta(days=target_date.weekday())
+
+    assignment_id = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '10:00',
+            'end_time': '16:00',
+            'staff_id': staff_profile['id'],
+            'role': 'Server',
+            'status': 'scheduled',
+        },
+    )[0]
+
+    try:
+        # Dismiss the initial creation notification so we can isolate the update event
+        for note in list_notifications(client, staff_token):
+            acknowledge_notification(client, staff_token, note['id'])
+
+        update_payload = {
+            'shift_date': target_date.isoformat(),
+            'start_time': '11:00',
+            'end_time': '17:00',
+            'role': 'Server',
+            'status': 'confirmed',
+        }
+
+        rv = client.patch(
+            f'/api/schedules/assignments/{assignment_id}',
+            headers={'Authorization': f'Bearer {manager_token}'},
+            json=update_payload,
+        )
+        assert rv.status_code == 200
+
+        notifications = list_notifications(client, staff_token)
+        matching = [note for note in notifications if int(note.get('assignment_id') or 0) == assignment_id]
+        assert matching
+        assert any('update' in (note.get('title') or '').lower() or 'update' in (note.get('message') or '').lower() for note in matching)
+
+        for note in matching:
+            acknowledge_notification(client, staff_token, note['id'])
+    finally:
+        delete_assignment(client, manager_token, assignment_id)
+        for note in list_notifications(client, staff_token, include_ack=True):
+            if int(note.get('assignment_id') or 0) == assignment_id:
+                acknowledge_notification(client, staff_token, note['id'])

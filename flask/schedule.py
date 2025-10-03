@@ -137,11 +137,92 @@ def ensure_schedule_schema() -> None:
     )
     cur.execute('CREATE INDEX IF NOT EXISTS idx_staff_availability_week ON staff_availability (availability_date)')
 
+    notifications_table_sql = (
+        "CREATE TABLE IF NOT EXISTS staff_notifications ("
+        "id INTEGER PRIMARY KEY,"
+        "user_id INTEGER NOT NULL,"
+        "assignment_id INTEGER,"
+        "title TEXT NOT NULL,"
+        "message TEXT NOT NULL,"
+        "shift_date DATE,"
+        "start_time TEXT,"
+        "end_time TEXT,"
+        "role TEXT,"
+        "status TEXT,"
+        "created_at DATETIME DEFAULT (datetime('now')),"
+        "acknowledged_at DATETIME,"
+        "FOREIGN KEY (user_id) REFERENCES users(id),"
+        "FOREIGN KEY (assignment_id) REFERENCES shift_assignments(id) ON DELETE CASCADE"
+        ")"
+    )
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='staff_notifications'")
+    table_exists = cur.fetchone() is not None
+    if not table_exists:
+        cur.execute(notifications_table_sql)
+    else:
+        cur.execute('PRAGMA foreign_key_list(staff_notifications)')
+        fk_rows = cur.fetchall()
+        cascade_ok = False
+        for fk in fk_rows:
+            try:
+                column_name = fk['from']  # type: ignore[index]
+                on_delete = fk['on_delete']  # type: ignore[index]
+            except (TypeError, IndexError, KeyError):
+                column_name = fk[3] if len(fk) > 3 else None  # type: ignore[index]
+                on_delete = fk[6] if len(fk) > 6 else None  # type: ignore[index]
+            if column_name == 'assignment_id':
+                cascade_ok = str(on_delete or '').upper() == 'CASCADE'
+                break
+        if not cascade_ok:
+            cur.execute('ALTER TABLE staff_notifications RENAME TO staff_notifications_legacy')
+            cur.execute(notifications_table_sql.replace('IF NOT EXISTS ', ''))
+            cur.execute(
+                'INSERT INTO staff_notifications ('
+                'id, user_id, assignment_id, title, message, shift_date, start_time, end_time, role, status, created_at, acknowledged_at'
+                ') SELECT '
+                'id, user_id, assignment_id, title, message, shift_date, start_time, end_time, role, status, created_at, acknowledged_at '
+                'FROM staff_notifications_legacy'
+            )
+            cur.execute('DROP TABLE staff_notifications_legacy')
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_staff_notifications_user ON staff_notifications (user_id, acknowledged_at, created_at)')
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_staff_notifications_assignment ON staff_notifications (assignment_id)')
+
     conn.commit()
+
+
+@bp.before_app_request
+def _ensure_schedule_schema_before_request() -> None:
+    try:
+        ensure_schedule_schema()
+    except Exception:
+        pass
+
+
+def reset_schedule_state(*, include_assignments: bool = True, include_notifications: bool = True) -> None:
+    """Utility to clear schedule-related tables; primarily used in tests."""
+    conn = get_db()
+    cur = conn.cursor()
+    statements = []
+    if include_notifications:
+        statements.append('DELETE FROM staff_notifications')
+    if include_assignments:
+        statements.append('DELETE FROM shift_assignments')
+    if statements:
+        cur.execute('PRAGMA foreign_keys = OFF')
+        try:
+            for stmt in statements:
+                cur.execute(stmt)
+        finally:
+            cur.execute('PRAGMA foreign_keys = ON')
+        conn.commit()
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
     try:
         return datetime.fromisoformat(value).date()
     except ValueError:
@@ -382,6 +463,76 @@ def _simulate_notification(action: str, assignment: Dict[str, Any], staff_name: 
     return f"[Simulated notification] {staff_name or 'Team'} {action} shift on {readable}."
 
 
+def _format_notification_datetime(shift_date: Optional[str], start_time: Optional[str]) -> str:
+    if start_time:
+        try:
+            parsed = datetime.fromisoformat(start_time)
+            return parsed.strftime('%b %d, %Y at %I:%M %p')
+        except ValueError:
+            pass
+
+    if shift_date:
+        try:
+            parsed_date = date.fromisoformat(shift_date)
+            return parsed_date.strftime('%b %d, %Y')
+        except ValueError:
+            try:
+                parsed_datetime = datetime.fromisoformat(shift_date)
+                return parsed_datetime.strftime('%b %d, %Y')
+            except ValueError:
+                return shift_date
+
+    return 'the upcoming schedule'
+
+
+def _insert_assignment_notification(
+    cursor: Any,
+    *,
+    user_id: Optional[int],
+    assignment_id: Optional[int],
+    action: str,
+    role: Optional[str],
+    status: Optional[str],
+    shift_date: Optional[str],
+    start_time: Optional[str],
+    end_time: Optional[str],
+) -> None:
+    if user_id is None or assignment_id is None:
+        return
+
+    readable = _format_notification_datetime(shift_date, start_time)
+    role_label = (role or 'Shift').strip() or 'Shift'
+    action_token = action.lower()
+
+    if action_token == 'assigned':
+        title = 'New shift assigned'
+        message = f"You've been assigned to {role_label} on {readable}."
+    elif action_token == 'reassigned':
+        title = 'Shift reassigned'
+        message = f"You're now scheduled for {role_label} on {readable}."
+    else:
+        title = 'Shift updated'
+        message = f"Details for your {role_label} on {readable} were updated."
+
+    cursor.execute(
+        'INSERT INTO staff_notifications '
+        '(user_id, assignment_id, title, message, shift_date, start_time, end_time, role, status, created_at) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?)',
+        (
+            user_id,
+            assignment_id,
+            title,
+            message,
+            shift_date,
+            start_time,
+            end_time,
+            role,
+            status,
+            datetime.utcnow().isoformat(),
+        ),
+    )
+
+
 @bp.route('/week', methods=['GET'])
 def weekly_schedule():
     if jwt_required is None or get_jwt_identity is None:
@@ -519,6 +670,20 @@ def create_assignment():
             if row:
                 staff_name = ((row[0] or '') + ' ' + (row[1] or '')).strip()
 
+        assigned_user_id = _coerce_int(assignment.get('staff_id'))
+        if assigned_user_id:
+            _insert_assignment_notification(
+                cur,
+                user_id=assigned_user_id,
+                assignment_id=assignment_id,
+                action='assigned',
+                role=assignment.get('role'),
+                status=assignment.get('status'),
+                shift_date=assignment.get('shift_date'),
+                start_time=assignment.get('start'),
+                end_time=assignment.get('end'),
+            )
+
         notification_messages.append(_simulate_notification('assigned a new', assignment, staff_name))
 
     conn.commit()
@@ -543,6 +708,7 @@ def update_assignment(assignment_id: int):
         'end': row[2],
         'staff_id': row[3],
     }
+    previous_staff_id = _coerce_int(current['staff_id'])
 
     def _coerce_time_value(value: Any) -> Optional[str]:
         if value is None:
@@ -600,13 +766,14 @@ def update_assignment(assignment_id: int):
     start_iso = _combine_datetime(shift_date, start_tuple)
     end_iso = _combine_datetime(shift_date, end_tuple)
 
-    staff_id = data.get('staff_id') if 'staff_id' in data else current['staff_id']
+    staff_id_value = data.get('staff_id') if 'staff_id' in data else current['staff_id']
+    normalized_staff_id = _coerce_int(staff_id_value)
 
     assignment = {
         'shift_date': shift_date.isoformat(),
         'start': start_iso,
         'end': end_iso,
-        'staff_id': staff_id,
+        'staff_id': normalized_staff_id,
     }
 
     conflicts = _find_conflicts(assignment, ignore_id=assignment_id)
@@ -614,7 +781,7 @@ def update_assignment(assignment_id: int):
         return jsonify({'msg': 'Shift conflicts with an existing assignment', 'conflicts': conflicts}), 409
 
     fields = {
-        'assigned_user': staff_id,
+        'assigned_user': normalized_staff_id,
         'role': data.get('role'),
         'status': data.get('status'),
         'notes': data.get('notes'),
@@ -634,6 +801,27 @@ def update_assignment(assignment_id: int):
     params.append(assignment_id)
 
     cur.execute(f"UPDATE shift_assignments SET {', '.join(updates)}, updated_at=? WHERE id=?", params)
+    if normalized_staff_id is not None and (previous_staff_id is None or previous_staff_id != normalized_staff_id):
+        action_label = 'assigned'
+    else:
+        action_label = 'updated'
+
+    if normalized_staff_id is not None:
+        cur.execute('SELECT shift_date, start_time, end_time, role, status FROM shift_assignments WHERE id=?', (assignment_id,))
+        updated_row = cur.fetchone()
+        if updated_row:
+            _insert_assignment_notification(
+                cur,
+                user_id=normalized_staff_id,
+                assignment_id=assignment_id,
+                action=action_label,
+                role=updated_row[3],
+                status=updated_row[4],
+                shift_date=updated_row[0],
+                start_time=updated_row[1],
+                end_time=updated_row[2],
+            )
+
     conn.commit()
 
     return jsonify({'msg': 'Shift updated'})
@@ -735,6 +923,96 @@ def delete_assignment(assignment_id: int):
     return '', 204
 
 
+@bp.route('/notifications', methods=['GET'])
+@require_roles('Manager', 'Staff', 'Server', 'Admin')
+def list_notifications():
+    if get_jwt_identity is None:
+        return jsonify({'msg': 'JWT not available'}), 501
+
+    uid_raw = get_jwt_identity()
+    user_id = _coerce_int(uid_raw)
+    if user_id is None:
+        return jsonify({'msg': 'Unable to determine current user'}), 400
+
+    include_acknowledged = str(request.args.get('include_acknowledged', '')).lower() in {'1', 'true', 'yes'}
+    limit_param = request.args.get('limit')
+    limit_value: Optional[int] = None
+    if limit_param:
+        try:
+            limit_value = max(1, min(int(limit_param), 100))
+        except (TypeError, ValueError):
+            limit_value = None
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row  # type: ignore[attr-defined]
+    cur = conn.cursor()
+
+    query = (
+        'SELECT id, assignment_id, title, message, shift_date, start_time, end_time, role, status, created_at, acknowledged_at '
+        'FROM staff_notifications WHERE user_id=?'
+    )
+    params: List[Any] = [user_id]
+    if not include_acknowledged:
+        query += ' AND acknowledged_at IS NULL'
+    query += ' ORDER BY created_at DESC, id DESC'
+    if limit_value is not None:
+        query += ' LIMIT ?'
+        params.append(limit_value)
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+
+    notifications = []
+    for row in rows:
+        notifications.append({
+            'id': row['id'],
+            'assignment_id': row['assignment_id'],
+            'title': row['title'],
+            'message': row['message'],
+            'shift_date': row['shift_date'],
+            'start_time': row['start_time'],
+            'end_time': row['end_time'],
+            'role': row['role'],
+            'status': row['status'],
+            'created_at': row['created_at'],
+            'acknowledged_at': row['acknowledged_at'],
+        })
+
+    return jsonify({'notifications': notifications})
+
+
+@bp.route('/notifications/<int:notification_id>/ack', methods=['POST'])
+@require_roles('Manager', 'Staff', 'Server', 'Admin')
+def acknowledge_notification(notification_id: int):
+    if get_jwt_identity is None:
+        return jsonify({'msg': 'JWT not available'}), 501
+
+    uid_raw = get_jwt_identity()
+    user_id = _coerce_int(uid_raw)
+    if user_id is None:
+        return jsonify({'msg': 'Unable to determine current user'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    now_iso = datetime.utcnow().isoformat()
+
+    cur.execute(
+        'UPDATE staff_notifications SET acknowledged_at=? WHERE id=? AND user_id=? AND acknowledged_at IS NULL',
+        (now_iso, notification_id, user_id),
+    )
+
+    if cur.rowcount == 0:
+        cur.execute('SELECT 1 FROM staff_notifications WHERE id=? AND user_id=?', (notification_id, user_id))
+        exists = cur.fetchone()
+        conn.commit()
+        if not exists:
+            return jsonify({'msg': 'Notification not found'}), 404
+        return jsonify({'msg': 'Notification already acknowledged', 'notification_id': notification_id}), 200
+
+    conn.commit()
+    return jsonify({'msg': 'Notification acknowledged', 'notification_id': notification_id}), 200
+
+
 @bp.route('/shifts', methods=['POST'])
 @require_roles('Manager')
 def create_shift_template():
@@ -823,6 +1101,8 @@ def my_assignments():
 
 
 def _serialize_availability_row(row: Mapping[str, Any]) -> Dict[str, Any]:
+    if not hasattr(row, 'get'):
+        row = dict(row)
     full_name = ' '.join(filter(None, [(row['first_name'] or '').strip(), (row['last_name'] or '').strip()])).strip() or None
     flag = _normalize_availability_flag(row['is_available'])
     is_available: Optional[bool]

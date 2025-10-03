@@ -111,6 +111,26 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
 CREATE INDEX IF NOT EXISTS idx_shift_assignments_user_date ON shift_assignments (assigned_user, shift_date);
 CREATE INDEX IF NOT EXISTS idx_shift_assignments_week ON shift_assignments (schedule_week_start);
 
+CREATE TABLE IF NOT EXISTS staff_notifications (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  assignment_id INTEGER,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  shift_date DATE,
+  start_time TEXT,
+  end_time TEXT,
+  role TEXT,
+  status TEXT,
+  created_at DATETIME DEFAULT (datetime('now')),
+  acknowledged_at DATETIME,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (assignment_id) REFERENCES shift_assignments(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_notifications_user ON staff_notifications (user_id, acknowledged_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_staff_notifications_assignment ON staff_notifications (assignment_id);
+
 -- Seed some common values
 INSERT OR IGNORE INTO types (name) VALUES ('Appetizer'), ('Main'), ('Dessert'), ('Beverage');
 INSERT OR IGNORE INTO roles (name) VALUES ('Admin'), ('User'), ('Manager'), ('Staff');

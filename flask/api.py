@@ -33,6 +33,7 @@ except Exception:
 from auth import bp as auth_bp
 from menu import bp as menu_bp
 from schedule import bp as schedule_bp
+from schedule import ensure_schedule_schema, reset_schedule_state
 from analytics import bp as analytics_bp
 from uploads import bp as uploads_bp
 from orders import bp as orders_bp
@@ -85,6 +86,18 @@ def create_app(test_config=None):
     @app.route('/health')
     def health():
         return 'ok'
+
+    try:
+        ensure_schedule_schema()
+    except Exception:
+        # Schema synchronization is best-effort during app factory creation; detailed logging occurs in schedule module when invoked at runtime.
+        pass
+
+    if app.config.get('TESTING'):
+        try:
+            reset_schedule_state()
+        except Exception:
+            pass
 
     return app
 

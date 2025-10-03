@@ -9,13 +9,14 @@ const unwrapResponse = (response) => {
   return response;
 };
 
-const useDashboardData = ({ includeSummary = false, includeSchedule = false } = {}) => {
+const useDashboardData = ({ includeSummary = false, includeSchedule = false, includeNotifications = false } = {}) => {
   const { authFetch } = useAuth();
   const [state, setState] = useState({
-    loading: includeSummary || includeSchedule,
+    loading: includeSummary || includeSchedule || includeNotifications,
     error: null,
     summary: null,
     schedule: null,
+    notifications: [],
   });
   const isMounted = useRef(true);
 
@@ -27,13 +28,14 @@ const useDashboardData = ({ includeSummary = false, includeSchedule = false } = 
   }, []);
 
   const loadData = useCallback(async () => {
-    if (!includeSummary && !includeSchedule) {
+    if (!includeSummary && !includeSchedule && !includeNotifications) {
       if (isMounted.current) {
         setState({
           loading: false,
           error: null,
           summary: null,
           schedule: null,
+          notifications: [],
         });
       }
       return;
@@ -44,18 +46,25 @@ const useDashboardData = ({ includeSummary = false, includeSchedule = false } = 
     }
 
     try {
-      const [summaryRes, scheduleRes] = await Promise.all([
+      const [summaryRes, scheduleRes, notificationsRes] = await Promise.all([
         includeSummary ? authFetch('/api/analytics/summary', { method: 'GET' }) : Promise.resolve(null),
         includeSchedule ? authFetch('/api/schedules/week', { method: 'GET' }) : Promise.resolve(null),
+        includeNotifications ? authFetch('/api/schedules/notifications', { method: 'GET' }) : Promise.resolve(null),
       ]);
 
       if (!isMounted.current) return;
 
+      const summaryPayload = includeSummary ? unwrapResponse(summaryRes) : null;
+      const schedulePayload = includeSchedule ? unwrapResponse(scheduleRes) : null;
+      const notificationsPayload = includeNotifications ? unwrapResponse(notificationsRes) : null;
+      const notifications = includeNotifications ? notificationsPayload?.notifications || [] : [];
+
       setState({
         loading: false,
         error: null,
-        summary: includeSummary ? unwrapResponse(summaryRes) : null,
-        schedule: includeSchedule ? unwrapResponse(scheduleRes) : null,
+        summary: summaryPayload,
+        schedule: schedulePayload,
+        notifications,
       });
     } catch (error) {
       if (!isMounted.current) return;
@@ -66,15 +75,31 @@ const useDashboardData = ({ includeSummary = false, includeSchedule = false } = 
         error: message,
       }));
     }
-  }, [authFetch, includeSchedule, includeSummary]);
+  }, [authFetch, includeNotifications, includeSchedule, includeSummary]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const acknowledgeNotification = useCallback(
+    async (notificationId) => {
+      if (!includeNotifications) return;
+      await authFetch(`/api/schedules/notifications/${notificationId}/ack`, { method: 'POST' });
+      if (!isMounted.current) return;
+      setState((prev) => ({
+        ...prev,
+        notifications: Array.isArray(prev.notifications)
+          ? prev.notifications.filter((item) => item?.id !== notificationId)
+          : [],
+      }));
+    },
+    [authFetch, includeNotifications],
+  );
+
   return {
     ...state,
     refresh: loadData,
+    acknowledgeNotification: includeNotifications ? acknowledgeNotification : undefined,
   };
 };
 

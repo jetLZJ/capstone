@@ -54,6 +54,15 @@ const SchedulePage = () => {
   const [isClaiming, setIsClaiming] = useState(false);
   const weekCacheRef = useRef({});
   const weekLoaders = useRef(new Map());
+  const today = useMemo(() => toDateInputValue(new Date()), []);
+  const computeDefaultShiftDate = useCallback(
+    (value) => {
+      const normalized = toDateInputValue(value || new Date());
+      if (!normalized) return today;
+      return normalized < today ? today : normalized;
+    },
+    [today]
+  );
 
   const hasScheduleData = Array.isArray(data?.days) && data.days.length > 0;
   const isInitialLoading = loading && !hasScheduleData;
@@ -386,10 +395,14 @@ const SchedulePage = () => {
     loadWeek(weekStart);
   }, [loadWeek, weekStart]);
 
-  const openEditor = useCallback((mode, shift = null, defaultDate = null) => {
-    setEditorError('');
-    setEditorState({ open: true, mode, shift, defaultDate });
-  }, []);
+  const openEditor = useCallback(
+    (mode, shift = null, defaultDate = null) => {
+      setEditorError('');
+      const sanitizedDefault = computeDefaultShiftDate(defaultDate);
+      setEditorState({ open: true, mode, shift, defaultDate: sanitizedDefault });
+    },
+    [computeDefaultShiftDate]
+  );
 
   const closeEditor = useCallback(() => {
     setEditorState((prev) => ({ ...prev, open: false, shift: null }));

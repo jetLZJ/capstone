@@ -43,18 +43,35 @@ export default function ShiftEditor({
   isSaving,
   error,
 }) {
-  const [form, setForm] = useState(() => emptyForm(weekStart));
+  const today = useMemo(() => toDateInputValue(new Date()), [open]);
+  const enforceMinShiftDate = (value) => {
+    const normalized = toDateInputValue(value || new Date());
+    if (!normalized) return today;
+    return normalized < today ? today : normalized;
+  };
+
+  const [form, setForm] = useState(() => {
+    const base = emptyForm(weekStart);
+    return {
+      ...base,
+      shift_date: enforceMinShiftDate(base.shift_date),
+    };
+  });
   const [localError, setLocalError] = useState('');
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm(weekStart));
+      const base = emptyForm(weekStart);
+      setForm({
+        ...base,
+        shift_date: enforceMinShiftDate(base.shift_date),
+      });
       setLocalError('');
       return;
     }
     if (mode === 'edit' && initialShift) {
       setForm({
-        shift_date: toDateInputValue(initialShift.shift_date || initialShift.start || initialShift.date),
+        shift_date: enforceMinShiftDate(initialShift.shift_date || initialShift.start || initialShift.date),
         start_time: toTimeInputValue(initialShift.start),
         end_time: toTimeInputValue(initialShift.end || initialShift.start),
         staff_id: initialShift.staff_id ? String(initialShift.staff_id) : '',
@@ -64,9 +81,11 @@ export default function ShiftEditor({
         repeat_weeks: 0,
       });
     } else {
-      const template = emptyForm(weekStart || defaultDate);
-      template.shift_date = defaultDate ? toDateInputValue(defaultDate) : template.shift_date;
-      setForm(template);
+      const template = emptyForm(defaultDate || weekStart);
+      setForm({
+        ...template,
+        shift_date: enforceMinShiftDate(defaultDate || template.shift_date),
+      });
     }
     setLocalError('');
   }, [open, mode, initialShift, defaultDate, weekStart]);
@@ -79,7 +98,11 @@ export default function ShiftEditor({
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    if (name === 'shift_date') {
+      setForm((prev) => ({ ...prev, [name]: enforceMinShiftDate(value) }));
+    } else {
+      setForm((prev) => ({ ...prev, [name]: value }));
+    }
     if (localError) {
       setLocalError('');
     }
@@ -87,6 +110,16 @@ export default function ShiftEditor({
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (!form.shift_date) {
+      setLocalError('Select a shift date.');
+      return;
+    }
+
+    if (form.shift_date < today) {
+      setLocalError('Shift date cannot be in the past.');
+      return;
+    }
+
     const startMinutes = timeStringToMinutes(form.start_time);
     const endMinutes = timeStringToMinutes(form.end_time);
 
@@ -266,6 +299,7 @@ export default function ShiftEditor({
                     value={form.shift_date}
                     onChange={handleChange}
                     className={controlClass}
+                    min={today}
                     required
                   />
                 </label>

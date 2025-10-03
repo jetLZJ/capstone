@@ -36,18 +36,18 @@ const TIMELINE_MARKERS = TIMELINE_HOURS.map((hour) => ({
 
 const MIN_TIMELINE_BLOCK_PERCENT = Math.max((15 / WORKING_DAY_TOTAL_MINUTES) * 100, 1.5);
 
-const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpenShift, tooltipSide = 'center', style, isTouchDevice }) => {
+const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpenShift, tooltipSide = 'center', style, isTouchDevice, isLocked = false }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false);
   const meta = statusMeta(assignment.status);
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `assignment-${assignment.id}`,
-    disabled: !isManager,
+    disabled: !isManager || isLocked,
   });
 
   const isOpenShift = (assignment.status || '').toLowerCase() === 'open';
-  const allowFill = Boolean(canFillOpenShift && isOpenShift);
-  const allowEdit = Boolean(isManager && typeof onEdit === 'function');
-  const isInteractive = allowEdit || allowFill;
+  const allowFill = !isLocked && Boolean(canFillOpenShift && isOpenShift);
+  const allowEdit = !isLocked && Boolean(isManager && typeof onEdit === 'function');
+  const isInteractive = !isLocked && (allowEdit || allowFill);
 
   const start = parseISOToDate(assignment.start);
   const durationLabel = computeDurationLabel(assignment.start, assignment.end);
@@ -60,6 +60,7 @@ const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpen
   const showTooltip = !isTouchDevice && isTooltipVisible && !isDragging && tooltipParts.length > 0;
 
   const handleDoubleClick = () => {
+    if (isLocked) return;
     if (allowEdit) {
       onEdit(assignment);
     } else if (allowFill && typeof onFillOpenShift === 'function') {
@@ -106,8 +107,11 @@ const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpen
       {...listeners}
       {...attributes}
       className={classNames(
-  'relative z-10 flex h-full flex-col rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition hover:border-[var(--app-info)] hover:shadow-md',
-        isManager ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]' : 'cursor-default',
+        'relative z-10 flex h-full flex-col rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] shadow-sm transition',
+        isLocked ? 'cursor-not-allowed' : 'hover:border-[var(--app-info)] hover:shadow-md',
+        isInteractive
+          ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]'
+          : 'cursor-default',
         isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
       onDoubleClick={handleDoubleClick}
@@ -117,7 +121,8 @@ const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpen
       onMouseLeave={() => setIsTooltipVisible(false)}
       onFocus={() => setIsTooltipVisible(true)}
       onBlur={() => setIsTooltipVisible(false)}
-      tabIndex={isInteractive ? 0 : undefined}
+  tabIndex={isInteractive ? 0 : undefined}
+  aria-disabled={isLocked || undefined}
       style={style}
     >
       {showTooltip ? (
@@ -177,13 +182,14 @@ const DayColumn = ({
   canFillOpenShift,
   isManager,
   isToday,
+  isPast = false,
   holiday,
   isTouchDevice,
   isSevenColumn,
   columnIndex = 0,
   totalColumns = 1,
 }) => {
-  const { setNodeRef, isOver } = useDroppable({ id: `day-${day.date}` });
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${day.date}`, disabled: isPast });
   const dateObj = parseISOToDate(day.date);
   const holidayInfo = holiday || getSingaporeHoliday(day.date);
   const hasAssignments = (assignments || []).length > 0;
@@ -219,19 +225,28 @@ const DayColumn = ({
     ? day.date
     : dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
+  const handleAddClick = () => {
+    if (typeof onAdd === 'function' && !isPast) {
+      onAdd(day.date);
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
       className={classNames(
         'relative flex min-h-[24rem] flex-col gap-4 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-4 shadow-sm transition',
-        isOver ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : '',
-        isActive ? 'border-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)]' : '',
+        !isPast && isOver ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : '',
+        !isPast && isActive ? 'border-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)]' : '',
         holidayInfo ? 'border-[color-mix(in_srgb,var(--app-warning)_45%,_transparent_55%)] bg-[color-mix(in_srgb,var(--app-warning)_8%,_var(--app-surface)_92%)]' : '',
         isToday
           ? 'border-[color-mix(in_srgb,var(--app-primary)_55%,_transparent_45%)] bg-[color-mix(in_srgb,var(--app-primary)_10%,_var(--app-surface)_90%)] shadow-[0_0_55px_0_color-mix(in_srgb,var(--app-primary)_38%,_transparent_62%)] ring-2 ring-[color-mix(in_srgb,var(--app-primary)_50%,_transparent_50%)] ring-offset-4 ring-offset-[color-mix(in_srgb,var(--app-bg)_92%,_var(--app-surface)_8%)]'
           : ''
       )}
     >
+      {isPast ? (
+        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[rgba(15,23,42,0.08)]" />
+      ) : null}
       {holidayInfo ? (
         <div className="pointer-events-none absolute left-1/2 -top-4 z-30 flex -translate-x-1/2 flex-col items-center gap-1">
           <span
@@ -247,14 +262,24 @@ const DayColumn = ({
           ) : null}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-start gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)] px-2 py-1 text-left min-h-[5.5rem]">
+      <div
+        className={classNames(
+          'relative z-10 flex flex-wrap items-start gap-2 rounded-2xl px-2 py-1 text-left min-h-[5.5rem]',
+          isPast
+            ? 'bg-[color-mix(in_srgb,var(--app-surface)_88%,_var(--app-bg)_12%)]'
+            : 'bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)]'
+        )}
+      >
         <div className="flex w-full items-start justify-between gap-2">
           <div className="text-sm font-semibold text-[var(--app-text)]">{formattedDate}</div>
           {isManager ? (
             <button
               type="button"
-              onClick={() => onAdd(day.date)}
-              className="rounded-full border border-dashed border-[rgba(15,23,42,0.2)] px-2 py-1 text-xs text-[var(--app-muted)] transition hover:border-[var(--app-info)] hover:text-[var(--app-info)]"
+              onClick={handleAddClick}
+              className={classNames(
+                'rounded-full border border-dashed border-[rgba(15,23,42,0.2)] px-2 py-1 text-xs text-[var(--app-muted)] transition',
+                isPast ? 'pointer-events-none opacity-50' : 'hover:border-[var(--app-info)] hover:text-[var(--app-info)]'
+              )}
             >
               + Add
             </button>
@@ -263,7 +288,7 @@ const DayColumn = ({
         <div className="w-full text-xs text-[var(--app-muted)]">{shiftSummary}</div>
       </div>
 
-      <div className="flex-1">
+      <div className="relative z-10 flex-1">
         <div className="relative min-h-[22rem]">
           {!isSevenColumn ? (
             <div className="absolute inset-y-0 left-0 w-16 select-none">
@@ -291,7 +316,8 @@ const DayColumn = ({
           <div
             className={classNames(
               'relative ml-0 rounded-xl border border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_92%,_var(--app-bg)_8%)]',
-              isSevenColumn ? '' : 'ml-16'
+              isSevenColumn ? '' : 'ml-16',
+              isPast ? 'bg-[color-mix(in_srgb,var(--app-surface)_84%,_var(--app-bg)_16%)]' : ''
             )}
             style={{ minHeight: '22rem' }}
           >
@@ -342,6 +368,7 @@ const DayColumn = ({
                       tooltipSide={tooltipSide}
                       style={{ height: '100%' }}
                       isTouchDevice={isTouchDevice}
+                      isLocked={isPast}
                     />
                   </div>
                 );
@@ -435,6 +462,14 @@ export default function ScheduleCalendar({
     return null;
   }, [activeId, days]);
 
+  const todayString = useMemo(() => toDateInputValue(new Date()), []);
+  const isSameDate = useCallback((a, b) => {
+    if (!a || !b) return false;
+    const d1 = toDateInputValue(parseISOToDate(a));
+    const d2 = toDateInputValue(parseISOToDate(b));
+    return d1 === d2;
+  }, []);
+
   const handleDragStart = useCallback(({ active }) => {
     if (active?.id && String(active.id).startsWith('assignment-')) {
       setActiveId(active.id);
@@ -458,20 +493,19 @@ export default function ScheduleCalendar({
       if (!assignment) return;
 
       const targetDate = String(over.id).replace('day-', '');
+      const targetDay = dayAssignments.find((day) => day.date === targetDate);
+      if (targetDay) {
+        const targetDayValue = toDateInputValue(parseISOToDate(targetDay.date));
+        if (targetDayValue < todayString) {
+          return;
+        }
+      }
       if (typeof onMoveShift === 'function') {
         onMoveShift(assignment, targetDate);
       }
     },
-    [activeAssignment, onMoveShift]
+    [activeAssignment, dayAssignments, onMoveShift, todayString]
   );
-
-  const todayString = useMemo(() => toDateInputValue(new Date()), []);
-  const isSameDate = useCallback((a, b) => {
-    if (!a || !b) return false;
-    const d1 = toDateInputValue(parseISOToDate(a));
-    const d2 = toDateInputValue(parseISOToDate(b));
-    return d1 === d2;
-  }, []);
 
   return (
     <div className="flex flex-col gap-5">
@@ -503,25 +537,31 @@ export default function ScheduleCalendar({
             ? Array.from({ length: 7 }).map((_, idx) => (
                 <div key={idx} className="h-[22rem] animate-pulse rounded-2xl bg-[color-mix(in_srgb,var(--app-surface)_85%,_var(--app-bg)_15%)]" />
               ))
-            : dayAssignments.map((day, idx) => (
-                <DayColumn
-                  key={day.date}
-                  day={day}
-                  assignments={day.assignments}
-                  onAdd={(date) => onAddShift(date)}
-                  onEdit={onEditShift}
-                  onFillOpenShift={onFillOpenShift}
-                  canFillOpenShift={canFillOpenShift}
-                  isManager={isManager}
-                  isActive={overId === `day-${day.date}`}
-                  isToday={isSameDate(day.date, todayString)}
-                  holiday={day.holiday}
-                  isTouchDevice={isTouchDevice}
-                  isSevenColumn={isSevenColumn}
-                  columnIndex={idx}
-                  totalColumns={dayAssignments.length}
-                />
-              ))}
+            : dayAssignments.map((day, idx) => {
+                const dayValue = toDateInputValue(parseISOToDate(day.date));
+                const isTodayColumn = isSameDate(day.date, todayString);
+                const isPastColumn = dayValue < todayString;
+                return (
+                  <DayColumn
+                    key={day.date}
+                    day={day}
+                    assignments={day.assignments}
+                    onAdd={(date) => onAddShift(date)}
+                    onEdit={onEditShift}
+                    onFillOpenShift={onFillOpenShift}
+                    canFillOpenShift={canFillOpenShift}
+                    isManager={isManager}
+                    isActive={overId === `day-${day.date}`}
+                    isToday={isTodayColumn}
+                    isPast={isPastColumn}
+                    holiday={day.holiday}
+                    isTouchDevice={isTouchDevice}
+                    isSevenColumn={isSevenColumn}
+                    columnIndex={idx}
+                    totalColumns={dayAssignments.length}
+                  />
+                );
+              })}
         </div>
 
         <DragOverlay>

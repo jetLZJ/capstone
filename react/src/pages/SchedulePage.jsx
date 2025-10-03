@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ScheduleCalendar from '../components/schedule/ScheduleCalendar';
 import ScheduleSidebar from '../components/schedule/ShiftList';
 import ShiftEditor from '../components/schedule/ShiftEditor';
@@ -12,6 +12,8 @@ import {
   toApiDate,
   toApiTime,
   toDateInputValue,
+  timeStringToMinutes,
+  MIN_SHIFT_DURATION_MINUTES,
 } from '../components/schedule/scheduleHelpers';
 import { toast } from 'react-toastify';
 
@@ -45,6 +47,8 @@ const SchedulePage = () => {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [teamAvailability, setTeamAvailability] = useState({});
+  const weekCacheRef = useRef({});
+  const weekLoaders = useRef(new Map());
 
   const hasScheduleData = Array.isArray(data?.days) && data.days.length > 0;
   const isInitialLoading = loading && !hasScheduleData;
@@ -86,6 +90,13 @@ const SchedulePage = () => {
 
       const normalizedWeekStart = toDateInputValue(parseWeekString(payload.week_start || ws));
 
+      if (normalizedWeekStart) {
+        weekCacheRef.current = {
+          ...weekCacheRef.current,
+          [normalizedWeekStart]: hydratedDays,
+        };
+      }
+
       setWeekStart((current) => (current === normalizedWeekStart ? current : normalizedWeekStart));
 
       setData({
@@ -101,6 +112,185 @@ const SchedulePage = () => {
       setLoading(false);
     }
   }, [authFetch]);
+
+  const fetchWeekSnapshot = useCallback(
+    async (weekKey) => {
+      const normalizedKey = toDateInputValue(parseWeekString(weekKey));
+      if (!normalizedKey) return [];
+
+      if (Object.prototype.hasOwnProperty.call(weekCacheRef.current, normalizedKey)) {
+        return weekCacheRef.current[normalizedKey] || [];
+      }
+
+      if (weekLoaders.current.has(normalizedKey)) {
+        return weekLoaders.current.get(normalizedKey);
+      }
+
+      const loaderPromise = (async () => {
+        try {
+          const response = await authFetch('/api/schedules/week', { params: { week_start: normalizedKey } });
+          const payload = response?.data || {};
+          const incomingDays = payload.days || [];
+
+          const yearsToLoad = Array.from(
+            new Set(
+              incomingDays
+                .map((day) => parseISOToDate(day.date))
+                .map((dateObj) => (Number.isNaN(dateObj.getTime()) ? null : dateObj.getFullYear()))
+                .filter((year) => Number.isFinite(year))
+            )
+          );
+
+          if (yearsToLoad.length) {
+            await ensureSingaporeHolidays(yearsToLoad);
+          }
+
+          const hydratedDays = incomingDays.map((day) => ({
+            ...day,
+            holiday: getSingaporeHoliday(day.date),
+          }));
+
+          weekCacheRef.current = {
+            ...weekCacheRef.current,
+            [normalizedKey]: hydratedDays,
+          };
+
+          return hydratedDays;
+        } catch (error) {
+          console.error('Failed to load schedule snapshot', error);
+          return [];
+        } finally {
+          weekLoaders.current.delete(normalizedKey);
+        }
+      })();
+
+      weekLoaders.current.set(normalizedKey, loaderPromise);
+      return loaderPromise;
+    },
+    [authFetch]
+  );
+
+  const ensureWeeks = useCallback(
+    async (weekKeys = []) => {
+      const normalizedKeys = Array.from(
+        new Set(
+          (weekKeys || [])
+            .map((key) => toDateInputValue(parseWeekString(key)))
+            .filter((value) => Boolean(value))
+        )
+      );
+
+      if (!normalizedKeys.length) return;
+      await Promise.all(normalizedKeys.map((key) => fetchWeekSnapshot(key)));
+    },
+    [fetchWeekSnapshot]
+  );
+
+  const detectLocalConflict = useCallback(
+    (candidate, ignoreId, options = {}) => {
+      if (!candidate) return null;
+
+      const staffId = candidate.staff_id;
+      if (!staffId) return null;
+
+      const normalizedStaffId = Number(staffId);
+      if (!Number.isFinite(normalizedStaffId)) return null;
+
+      const shiftDateKey = toApiDate(candidate.shift_date);
+      const startToken = toApiTime(candidate.start_time);
+      const endToken = toApiTime(candidate.end_time);
+
+      if (!shiftDateKey || !startToken || !endToken) {
+        return null;
+      }
+
+      const proposedStart = timeStringToMinutes(startToken);
+      const proposedEnd = timeStringToMinutes(endToken);
+
+      if (!Number.isFinite(proposedStart) || !Number.isFinite(proposedEnd)) {
+        return null;
+      }
+
+      const baseDate = parseISOToDate(`${shiftDateKey}T00:00:00`);
+      if (Number.isNaN(baseDate.getTime())) {
+        return null;
+      }
+
+      const repeatWeeks = Math.max(0, Number(options.repeatWeeks || 0));
+      const ignoreToken = ignoreId !== null && ignoreId !== undefined ? Number(ignoreId) : null;
+
+      const dayIndex = new Map();
+      const registerDay = (day) => {
+        if (!day) return;
+        const dateKey = toApiDate(day.date);
+        if (!dateKey) return;
+        const assignments = Array.isArray(day.assignments) ? day.assignments : [];
+        if (!dayIndex.has(dateKey)) {
+          dayIndex.set(dateKey, assignments);
+          return;
+        }
+        const existing = dayIndex.get(dateKey) || [];
+        const merged = existing.slice();
+        assignments.forEach((assignment) => {
+          if (!merged.some((item) => Number(item.id) === Number(assignment?.id))) {
+            merged.push(assignment);
+          }
+        });
+        dayIndex.set(dateKey, merged);
+      };
+
+      (Array.isArray(data?.days) ? data.days : []).forEach(registerDay);
+      Object.values(weekCacheRef.current || {}).forEach((days) => {
+        if (!Array.isArray(days)) return;
+        days.forEach(registerDay);
+      });
+
+      for (let offset = 0; offset <= repeatWeeks; offset += 1) {
+        const occurrenceDate = new Date(baseDate);
+        occurrenceDate.setDate(occurrenceDate.getDate() + offset * 7);
+        const occurrenceKey = toApiDate(occurrenceDate);
+        if (!occurrenceKey) continue;
+
+        const assignments = dayIndex.get(occurrenceKey);
+        if (!Array.isArray(assignments) || !assignments.length) continue;
+
+        for (const assignment of assignments) {
+          if (!assignment) continue;
+          const staffTokenRaw = assignment.staff_id ?? assignment.assigned_user ?? null;
+          const assignmentStaff = staffTokenRaw !== null && staffTokenRaw !== undefined ? Number(staffTokenRaw) : null;
+          if (!assignmentStaff || assignmentStaff !== normalizedStaffId) continue;
+          if (ignoreToken !== null && Number(assignment.id) === ignoreToken) continue;
+
+          const startDate = parseISOToDate(assignment.start || assignment.start_time);
+          const endDate = parseISOToDate(assignment.end || assignment.end_time);
+          if (Number.isNaN(startDate.getTime())) continue;
+
+          const existingStartMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+          let existingEndMinutes;
+          if (Number.isNaN(endDate.getTime())) {
+            existingEndMinutes = existingStartMinutes + MIN_SHIFT_DURATION_MINUTES;
+          } else {
+            existingEndMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+          }
+
+          if (existingEndMinutes <= existingStartMinutes) {
+            existingEndMinutes = existingStartMinutes + MIN_SHIFT_DURATION_MINUTES;
+          }
+
+          const overlaps = !(proposedEnd <= existingStartMinutes || proposedStart >= existingEndMinutes);
+          if (overlaps) {
+            return {
+              ...assignment,
+              occurrenceDate: occurrenceKey,
+            };
+          }
+        }
+      }
+
+      return null;
+    },
+    [data?.days]
+  );
 
   const loadStaff = useCallback(async () => {
     if (!isManager) return;
@@ -203,18 +393,72 @@ const SchedulePage = () => {
 
   const handleSave = useCallback(async (form) => {
     if (!editorState.open) return;
-    setIsSaving(true);
     setEditorError('');
+
+    const normalizedStaffId = form.staff_id ? Number(form.staff_id) : null;
+    const shiftDate = toApiDate(form.shift_date);
+    const startToken = toApiTime(form.start_time);
+    const endToken = toApiTime(form.end_time);
+    const repeatWeeks = Math.max(0, Number(form.repeat_weeks || 0));
+
+    if (shiftDate) {
+      const baseDate = parseISOToDate(`${shiftDate}T00:00:00`);
+      if (!Number.isNaN(baseDate.getTime())) {
+        const weekKeys = [];
+        for (let offset = 0; offset <= repeatWeeks; offset += 1) {
+          const nextDate = new Date(baseDate);
+          nextDate.setDate(nextDate.getDate() + offset * 7);
+          weekKeys.push(toDateInputValue(startOfWeek(nextDate)));
+        }
+        await ensureWeeks(weekKeys);
+      }
+    }
+
+    const conflict = detectLocalConflict(
+      {
+        staff_id: normalizedStaffId,
+        shift_date: shiftDate,
+        start_time: startToken,
+        end_time: endToken,
+      },
+      editorState.mode === 'edit' && editorState.shift ? editorState.shift.id : null,
+      { repeatWeeks }
+    );
+
+    if (conflict) {
+      const conflictLabel = conflict.shift_name || conflict.role || 'Existing shift';
+      const conflictStart = conflict.start ? conflict.start.slice(11, 16) : '';
+      const conflictEnd = conflict.end ? conflict.end.slice(11, 16) : '';
+      let message = `Conflict with ${conflictLabel} (${conflictStart || '??'}-${conflictEnd || '??'})`;
+      let toastMessage = 'This team member is already booked during that time slot.';
+      if (conflict.occurrenceDate) {
+        const conflictDateObj = parseISOToDate(`${conflict.occurrenceDate}T00:00:00`);
+        if (!Number.isNaN(conflictDateObj.getTime())) {
+          const conflictDateLabel = conflictDateObj.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          message = `${message} on ${conflictDateLabel}`;
+          toastMessage = `Already booked on ${conflictDateLabel}.`;
+        }
+      }
+      setEditorError(message);
+      toast.error(toastMessage);
+      return;
+    }
+
+    setIsSaving(true);
     const payload = {
       week_start: weekStart,
-      shift_date: toApiDate(form.shift_date),
-      start_time: toApiTime(form.start_time),
-      end_time: toApiTime(form.end_time),
-      staff_id: form.staff_id || null,
+      shift_date: shiftDate,
+      start_time: startToken,
+      end_time: endToken,
+      staff_id: normalizedStaffId,
       role: form.role || 'Server',
       status: form.status || 'scheduled',
       notes: form.notes || '',
-      repeat_weeks: form.repeat_weeks || 0,
+      repeat_weeks: repeatWeeks,
     };
 
     try {
@@ -249,7 +493,7 @@ const SchedulePage = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [authFetch, editorState, weekStart, closeEditor, refreshWeek]);
+  }, [authFetch, editorState, weekStart, closeEditor, refreshWeek, detectLocalConflict, ensureWeeks]);
 
   const handleDelete = useCallback(async () => {
     if (!editorState.shift) return;
@@ -267,11 +511,52 @@ const SchedulePage = () => {
   const handleMove = useCallback(async (assignment, targetDate) => {
     const start = toApiTime(assignment.start);
     const end = toApiTime(assignment.end || assignment.start);
+    const targetDateKey = toApiDate(targetDate);
+
     try {
+      if (assignment?.staff_id && targetDateKey) {
+        const targetDateObj = parseISOToDate(`${targetDateKey}T00:00:00`);
+        if (!Number.isNaN(targetDateObj.getTime())) {
+          await ensureWeeks([toDateInputValue(startOfWeek(targetDateObj))]);
+        }
+
+        const conflict = detectLocalConflict(
+          {
+            staff_id: assignment.staff_id,
+            shift_date: targetDateKey,
+            start_time: start,
+            end_time: end,
+          },
+          assignment.id
+        );
+
+        if (conflict) {
+          const conflictLabel = conflict.shift_name || conflict.role || 'Existing shift';
+          const conflictStart = conflict.start ? conflict.start.slice(11, 16) : '';
+          const conflictEnd = conflict.end ? conflict.end.slice(11, 16) : '';
+          let message = `Cannot move - conflicts with ${conflictLabel} (${conflictStart || '??'}-${conflictEnd || '??'})`;
+          let toastMessage = 'Shift move would create an overlap.';
+          if (conflict.occurrenceDate) {
+            const conflictDateObj = parseISOToDate(`${conflict.occurrenceDate}T00:00:00`);
+            if (!Number.isNaN(conflictDateObj.getTime())) {
+              const conflictDateLabel = conflictDateObj.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
+              message = `${message} on ${conflictDateLabel}`;
+              toastMessage = `Already booked on ${conflictDateLabel}.`;
+            }
+          }
+          toast.error(toastMessage);
+          return;
+        }
+      }
+
       await authFetch(`/api/schedules/assignments/${assignment.id}`, {
         method: 'PATCH',
         data: {
-          shift_date: toApiDate(targetDate),
+          shift_date: targetDateKey,
           start_time: start,
           end_time: end,
           staff_id: assignment.staff_id,
@@ -286,7 +571,7 @@ const SchedulePage = () => {
       const message = error?.response?.data?.msg || 'Unable to move shift';
       toast.error(message);
     }
-  }, [authFetch, refreshWeek]);
+  }, [authFetch, detectLocalConflict, ensureWeeks, refreshWeek]);
 
   const weekNav = useCallback((direction) => {
     const base = startOfWeek(parseWeekString(activeWeekStart || weekStart));

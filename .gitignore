@@ -91,6 +91,7 @@ Desktop.ini
 
 # Node
 node_modules/
+**/.vite/
 
 # Logs and runtime files
 *.log

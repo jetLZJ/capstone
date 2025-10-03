@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ScheduleCalendar from '../components/schedule/ScheduleCalendar';
 import ScheduleSidebar from '../components/schedule/ShiftList';
 import ShiftEditor from '../components/schedule/ShiftEditor';
+import Modal from '../components/schedule/Modal';
 import useAuth from '../hooks/useAuth';
 import {
   ensureSingaporeHolidays,
@@ -14,6 +15,7 @@ import {
   toDateInputValue,
   timeStringToMinutes,
   MIN_SHIFT_DURATION_MINUTES,
+  formatTimeRange,
 } from '../components/schedule/scheduleHelpers';
 import { toast } from 'react-toastify';
 
@@ -47,6 +49,9 @@ const SchedulePage = () => {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [teamAvailability, setTeamAvailability] = useState({});
+  const [fillTarget, setFillTarget] = useState(null);
+  const [fillError, setFillError] = useState('');
+  const [isClaiming, setIsClaiming] = useState(false);
   const weekCacheRef = useRef({});
   const weekLoaders = useRef(new Map());
 
@@ -573,6 +578,116 @@ const SchedulePage = () => {
     }
   }, [authFetch, detectLocalConflict, ensureWeeks, refreshWeek]);
 
+  const handleRequestFill = useCallback((assignment) => {
+    if (!isStaff || !assignment) return;
+    if ((assignment.status || '').toLowerCase() !== 'open') return;
+    setFillError('');
+    setFillTarget(assignment);
+  }, [isStaff]);
+
+  const closeFillDialog = useCallback(() => {
+    setFillTarget(null);
+    setFillError('');
+    setIsClaiming(false);
+  }, []);
+
+  const handleConfirmFill = useCallback(async () => {
+    if (!fillTarget || !isStaff) return;
+    const staffId = profile?.id !== undefined ? Number(profile.id) : null;
+
+    if (!Number.isFinite(staffId)) {
+      toast.error('Unable to identify your staff profile.');
+      return;
+    }
+
+    const shiftDate = toApiDate(fillTarget.shift_date || fillTarget.date);
+    const startToken = toApiTime(fillTarget.start || fillTarget.start_time);
+    const endToken = toApiTime(fillTarget.end || fillTarget.end_time);
+
+    if (!shiftDate || !startToken || !endToken) {
+      setFillError('This shift is missing timing details.');
+      return;
+    }
+
+    const shiftDateObj = parseISOToDate(`${shiftDate}T00:00:00`);
+    let weekKey = '';
+    if (!Number.isNaN(shiftDateObj.getTime())) {
+      weekKey = toDateInputValue(startOfWeek(shiftDateObj));
+      if (weekKey) {
+        await ensureWeeks([weekKey]);
+      }
+    }
+
+    const conflict = detectLocalConflict(
+      {
+        staff_id: staffId,
+        shift_date: shiftDate,
+        start_time: startToken,
+        end_time: endToken,
+      },
+      fillTarget.id
+    );
+
+    if (conflict) {
+      const conflictLabel = conflict.shift_name || conflict.role || 'Existing shift';
+      const conflictStart = conflict.start ? conflict.start.slice(11, 16) : '';
+      const conflictEnd = conflict.end ? conflict.end.slice(11, 16) : '';
+      let message = `Conflict with ${conflictLabel} (${conflictStart || '??'}-${conflictEnd || '??'})`;
+      let toastMessage = 'Already booked during that time.';
+      if (conflict.occurrenceDate) {
+        const conflictDateObj = parseISOToDate(`${conflict.occurrenceDate}T00:00:00`);
+        if (!Number.isNaN(conflictDateObj.getTime())) {
+          const conflictDateLabel = conflictDateObj.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          message = `${message} on ${conflictDateLabel}`;
+          toastMessage = `Already booked on ${conflictDateLabel}.`;
+        }
+      }
+      setFillError(message);
+      toast.error(toastMessage);
+      return;
+    }
+
+    try {
+      setIsClaiming(true);
+      const response = await authFetch(`/api/schedules/assignments/${fillTarget.id}/claim`, {
+        method: 'POST',
+      });
+      const message = response?.data?.msg || 'Shift claimed';
+      toast.success(message);
+
+      if (weekKey) {
+        const nextCache = { ...weekCacheRef.current };
+        if (Object.prototype.hasOwnProperty.call(nextCache, weekKey)) {
+          delete nextCache[weekKey];
+          weekCacheRef.current = nextCache;
+        }
+      }
+
+      closeFillDialog();
+      refreshWeek();
+    } catch (error) {
+      const conflicts = error?.response?.data?.conflicts;
+      if (Array.isArray(conflicts) && conflicts.length) {
+        const first = conflicts[0];
+        const conflictStart = first.start ? first.start.slice(11, 16) : '';
+        const conflictEnd = first.end ? first.end.slice(11, 16) : '';
+        const conflictLabel = first.shift_name || first.role || 'Existing shift';
+        setFillError(`Conflict with ${conflictLabel} (${conflictStart || '??'}-${conflictEnd || '??'})`);
+        toast.error('This shift overlaps with one of your assignments.');
+      } else {
+        const message = error?.response?.data?.msg || 'Unable to claim shift';
+        setFillError(message);
+        toast.error(message);
+      }
+    } finally {
+      setIsClaiming(false);
+    }
+  }, [authFetch, closeFillDialog, detectLocalConflict, ensureWeeks, fillTarget, isStaff, profile?.id, refreshWeek]);
+
   const weekNav = useCallback((direction) => {
     const base = startOfWeek(parseWeekString(activeWeekStart || weekStart));
     if (direction === 'prev') {
@@ -613,6 +728,13 @@ const SchedulePage = () => {
       </div>
     );
   }
+
+  const fillDateObj = fillTarget ? parseISOToDate(fillTarget.shift_date || fillTarget.date) : null;
+  const fillDateLabel = fillDateObj && !Number.isNaN(fillDateObj.getTime())
+    ? fillDateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const fillTimeLabel = fillTarget ? formatTimeRange(fillTarget.start || fillTarget.start_time, fillTarget.end || fillTarget.end_time) : '';
+  const fillRoleLabel = fillTarget?.role || 'General';
 
   return (
     <div className="min-h-full bg-[var(--app-bg)] py-8">
@@ -662,7 +784,77 @@ const SchedulePage = () => {
             onEditShift={(shift) => openEditor('edit', shift, shift.shift_date)}
             onMoveShift={isManager ? handleMove : undefined}
             onNavigateWeek={weekNav}
+            onFillOpenShift={handleRequestFill}
+            canFillOpenShift={isStaff}
           />
+
+          {fillTarget ? (
+            <Modal onClose={isClaiming ? undefined : closeFillDialog} className="max-w-xl">
+              <div className="flex h-full min-h-0 flex-col bg-[var(--app-surface)] p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-[var(--app-text)]">Fill this open shift</h2>
+                    <p className="text-sm text-[var(--app-muted)]">Claim this slot to add it to your schedule.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeFillDialog}
+                    className="rounded-full px-3 py-1 text-xs font-semibold text-[var(--app-muted)] transition hover:bg-[color-mix(in_srgb,var(--app-surface)_70%,_var(--app-bg)_30%)] hover:text-[var(--app-text)]"
+                    disabled={isClaiming}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_96%,_var(--app-bg)_4%)] p-4">
+                    <div className="text-xs uppercase tracking-wide text-[var(--app-muted)]">Shift date</div>
+                    <div className="text-lg font-semibold text-[var(--app-text)]">{fillDateLabel || 'TBD'}</div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_96%,_var(--app-bg)_4%)] p-4">
+                      <div className="text-xs uppercase tracking-wide text-[var(--app-muted)]">Time</div>
+                      <div className="text-lg font-semibold text-[var(--app-text)]">{fillTimeLabel || 'TBD'}</div>
+                    </div>
+                    <div className="rounded-2xl border border-[rgba(15,23,42,0.08)] bg-[color-mix(in_srgb,var(--app-surface)_96%,_var(--app-bg)_4%)] p-4">
+                      <div className="text-xs uppercase tracking-wide text-[var(--app-muted)]">Role</div>
+                      <div className="text-lg font-semibold text-[var(--app-text)]">{fillRoleLabel}</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-dashed border-[rgba(15,23,42,0.12)] bg-[color-mix(in_srgb,var(--app-surface)_98%,_var(--app-bg)_2%)] p-4 text-sm text-[var(--app-muted)]">
+                    Double-check the details above before confirming. You’ll receive a notification if the slot is already filled or overlaps with another shift.
+                  </div>
+
+                  {fillError ? (
+                    <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--app-danger)_50%,_transparent_50%)] bg-[color-mix(in_srgb,var(--app-danger)_12%,_var(--app-bg)_88%)] px-4 py-3 text-sm font-medium text-[var(--app-danger)]">
+                      {fillError}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-auto flex items-center justify-end gap-3 pt-6">
+                  <button
+                    type="button"
+                    onClick={closeFillDialog}
+                    className="rounded-full border border-[rgba(15,23,42,0.12)] px-4 py-2 text-sm font-semibold text-[var(--app-muted)] transition hover:border-[var(--app-text)] hover:text-[var(--app-text)]"
+                    disabled={isClaiming}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmFill}
+                    className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isClaiming}
+                  >
+                    {isClaiming ? 'Claiming…' : 'Fill this slot'}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          ) : null}
 
           <ShiftEditor
             open={editorState.open}

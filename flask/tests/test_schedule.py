@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -28,6 +28,35 @@ def get_profile(client, token):
     rv = client.get('/api/auth/me', headers={'Authorization': f'Bearer {token}'})
     assert rv.status_code == 200
     return rv.get_json()
+
+
+def get_week_schedule(client, token, week_start=None):
+    query_string = {}
+    if week_start:
+        query_string['week_start'] = week_start
+    rv = client.get('/api/schedules/week', headers={'Authorization': f'Bearer {token}'}, query_string=query_string)
+    assert rv.status_code == 200
+    return rv.get_json()
+
+
+def create_assignment(client, token, payload):
+    rv = client.post('/api/schedules/assignments', headers={'Authorization': f'Bearer {token}'}, json=payload)
+    assert rv.status_code == 201
+    return rv.get_json()['created_ids']
+
+
+def delete_assignment(client, token, assignment_id):
+    rv = client.delete(f'/api/schedules/assignments/{assignment_id}', headers={'Authorization': f'Bearer {token}'})
+    assert rv.status_code == 204
+
+
+def _next_monday(base=None, weeks_ahead=0):
+    base = base or date.today()
+    days_until_monday = (7 - base.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    target = base + timedelta(days=days_until_monday) + timedelta(weeks=weeks_ahead)
+    return target
 
 
 def test_staff_can_view_and_update_own_availability(client):
@@ -125,3 +154,130 @@ def test_analytics_requires_manager_role(client):
     manager_token = login(client, 'maya.manager@example.com')
     rv = client.get('/api/analytics/summary', headers={'Authorization': f'Bearer {manager_token}'})
     assert rv.status_code == 200
+
+
+def test_staff_can_view_open_coverage(client):
+    staff_token = login(client, 'sam.staff@example.com')
+    manager_token = login(client, 'maya.manager@example.com')
+
+    target_date = _next_monday()
+    week_start = target_date - timedelta(days=target_date.weekday())
+
+    created_ids = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'status': 'open',
+            'role': 'Server',
+        },
+    )
+    assignment_id = created_ids[0]
+
+    try:
+        payload = get_week_schedule(client, staff_token, week_start=week_start.isoformat())
+        open_assignments = [
+            assignment
+            for day in payload['days']
+            for assignment in day['assignments']
+            if (assignment.get('status') or '').lower() == 'open'
+        ]
+        assert any(int(assignment['id']) == assignment_id for assignment in open_assignments)
+    finally:
+        delete_assignment(client, manager_token, assignment_id)
+
+
+def test_staff_can_claim_open_shift(client):
+    staff_token = login(client, 'sam.staff@example.com')
+    staff_profile = get_profile(client, staff_token)
+    manager_token = login(client, 'maya.manager@example.com')
+
+    target_date = _next_monday(weeks_ahead=1)
+    week_start = target_date - timedelta(days=target_date.weekday())
+
+    created_ids = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '12:00',
+            'end_time': '18:00',
+            'status': 'open',
+            'role': 'Server',
+        },
+    )
+    assignment_id = created_ids[0]
+
+    try:
+        rv = client.post(
+            f'/api/schedules/assignments/{assignment_id}/claim',
+            headers={'Authorization': f'Bearer {staff_token}'},
+        )
+        assert rv.status_code == 200
+        claimed = rv.get_json()['assignment']
+        assert claimed['staff_id'] == staff_profile['id']
+        assert (claimed['status'] or '').lower() == 'scheduled'
+
+        payload = get_week_schedule(client, staff_token, week_start=week_start.isoformat())
+        matching = [
+            assignment
+            for day in payload['days']
+            for assignment in day['assignments']
+            if int(assignment['id']) == assignment_id
+        ]
+        assert matching
+        assert matching[0]['staff_id'] == staff_profile['id']
+    finally:
+        delete_assignment(client, manager_token, assignment_id)
+
+
+def test_staff_claim_blocked_when_conflict(client):
+    staff_token = login(client, 'sam.staff@example.com')
+    staff_profile = get_profile(client, staff_token)
+    manager_token = login(client, 'maya.manager@example.com')
+
+    target_date = _next_monday(weeks_ahead=2)
+    week_start = target_date - timedelta(days=target_date.weekday())
+
+    existing_shift_id = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '09:00',
+            'end_time': '15:00',
+            'staff_id': staff_profile['id'],
+            'role': 'Server',
+            'status': 'scheduled',
+        },
+    )[0]
+
+    conflicting_open_id = create_assignment(
+        client,
+        manager_token,
+        {
+            'week_start': week_start.isoformat(),
+            'shift_date': target_date.isoformat(),
+            'start_time': '12:00',
+            'end_time': '18:00',
+            'status': 'open',
+            'role': 'Server',
+        },
+    )[0]
+
+    try:
+        rv = client.post(
+            f'/api/schedules/assignments/{conflicting_open_id}/claim',
+            headers={'Authorization': f'Bearer {staff_token}'},
+        )
+        assert rv.status_code == 409
+        data = rv.get_json()
+        assert 'conflicts' in data
+    finally:
+        delete_assignment(client, manager_token, conflicting_open_id)
+        delete_assignment(client, manager_token, existing_shift_id)

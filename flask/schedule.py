@@ -233,8 +233,16 @@ def _load_week_assignments(week_start: date, include_all: bool, user_id: Any) ->
         'WHERE sa.shift_date BETWEEN ? AND ?'
     )
     if not include_all:
-        query += ' AND sa.assigned_user = ?'
-        params.append(user_id)
+        query += (
+            ' AND ('
+            'sa.assigned_user = ? '
+            'OR ('
+            'TRIM(COALESCE(sa.assigned_user, "")) = "" '
+            'AND LOWER(TRIM(COALESCE(sa.status, ""))) IN (?, ?)' 
+            ')'
+            ')'
+        )
+        params.extend([user_id, 'open', 'open coverage'])
     query += ' ORDER BY sa.shift_date, sa.start_time, sa.end_time'
     cur.execute(query, params)
     rows = cur.fetchall()
@@ -629,6 +637,92 @@ def update_assignment(assignment_id: int):
     conn.commit()
 
     return jsonify({'msg': 'Shift updated'})
+
+
+@bp.route('/assignments/<int:assignment_id>/claim', methods=['POST'])
+@require_roles('Manager', 'Staff', 'Server')
+def claim_assignment(assignment_id: int):
+    if get_jwt_identity is None:
+        return jsonify({'msg': 'JWT not available'}), 501
+
+    uid_raw = get_jwt_identity()
+    staff_id = _coerce_int(uid_raw)
+    if staff_id is None:
+        return jsonify({'msg': 'Unable to determine current user'}), 400
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row  # type: ignore[attr-defined]
+    cur = conn.cursor()
+    cur.execute(
+        'SELECT id, shift_date, start_time, end_time, assigned_user, status, role '
+        'FROM shift_assignments WHERE id=?',
+        (assignment_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        return jsonify({'msg': 'Shift assignment not found'}), 404
+
+    current_assigned = _coerce_int(row['assigned_user'])
+    status = (row['status'] or '').lower()
+
+    if current_assigned and current_assigned != staff_id:
+        return jsonify({'msg': 'Shift already filled'}), 409
+
+    if current_assigned == staff_id:
+        # Already assigned to this staff member; treat as idempotent success.
+        return jsonify({'msg': 'Shift already assigned', 'assignment_id': assignment_id})
+
+    if status not in {'open'}:
+        return jsonify({'msg': 'Shift is not open for coverage'}), 409
+
+    shift_date_value = row['shift_date']
+    shift_date = _parse_date(shift_date_value)
+    if not shift_date:
+        return jsonify({'msg': 'Invalid shift date'}), 400
+
+    start_value = row['start_time']
+    end_value = row['end_time']
+    if not start_value or not end_value:
+        return jsonify({'msg': 'Shift is missing timing details'}), 400
+
+    assignment_payload = {
+        'shift_date': _normalize_date_token(shift_date_value) or shift_date.isoformat(),
+        'start': start_value,
+        'end': end_value,
+        'staff_id': staff_id,
+    }
+
+    conflicts = _find_conflicts(assignment_payload, ignore_id=assignment_id)
+    if conflicts:
+        return jsonify({'msg': 'Shift conflicts with an existing assignment', 'conflicts': conflicts}), 409
+
+    now_iso = datetime.utcnow().isoformat()
+    schedule_week_start = _start_of_week(shift_date).isoformat()
+
+    cur.execute(
+        'UPDATE shift_assignments SET assigned_user=?, status=?, schedule_week_start=?, updated_at=? '
+        'WHERE id=? AND assigned_user IS NULL '
+        'AND LOWER(COALESCE(status, "")) = "open"',
+        (staff_id, 'scheduled', schedule_week_start, now_iso, assignment_id)
+    )
+
+    if cur.rowcount == 0:
+        return jsonify({'msg': 'Shift is no longer available'}), 409
+
+    conn.commit()
+
+    cur.execute(
+        'SELECT sa.*, u.first_name, u.last_name, u.email as staff_email, s.name as shift_name, s.role_required '
+        'FROM shift_assignments sa '
+        'LEFT JOIN users u ON sa.assigned_user = u.id '
+        'LEFT JOIN shifts s ON sa.shift_id = s.id '
+        'WHERE sa.id=?',
+        (assignment_id,)
+    )
+    updated_row = cur.fetchone()
+    assignment_data = _serialize_assignment(dict(updated_row)) if updated_row else None
+
+    return jsonify({'msg': 'Shift claimed', 'assignment': assignment_data}), 200
 
 
 @bp.route('/assignments/<int:assignment_id>', methods=['DELETE'])

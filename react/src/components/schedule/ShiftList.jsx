@@ -97,91 +97,105 @@ export default function ScheduleSidebar({
       ) : null}
 
       {/* filter card (reused) */}
-      {
-        (() => {
-          const filterCard = (
-            <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition md:basis-1/4 md:max-w-sm h-full">
-              <h4 className="text-sm font-semibold text-[var(--app-text)]">Filters</h4>
-              <div className="mt-3 space-y-3 text-sm">
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
-                  Staff member
-                  <select
-                    className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
-                    value={filters.staffId || ''}
-                    onChange={(e) => onFilterChange({ ...filters, staffId: e.target.value })}
-                  >
-                    <option value="">All team members</option>
-                    {staff.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name} • {person.role}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
-                  Shift status
-                  <select
-                    className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
-                    value={filters.status || ''}
-                    onChange={(e) => onFilterChange({ ...filters, status: e.target.value })}
-                  >
-                    {statusFilterOptions.map((option) => (
-                      <option key={option.value || 'all'} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="mt-4 text-xs text-[var(--app-muted)]">Filters adjust both the board and exported reports.</div>
+      {(() => {
+        const filterCard = (
+          <div className="h-full rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition md:basis-1/4 md:max-w-sm">
+            <h4 className="text-sm font-semibold text-[var(--app-text)]">Filters</h4>
+            <div className="mt-3 space-y-3 text-sm">
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
+                Staff member
+                <select
+                  className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
+                  value={filters.staffId || ''}
+                  onChange={(e) => onFilterChange({ ...filters, staffId: e.target.value })}
+                >
+                  <option value="">All team members</option>
+                  {staff.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name} • {person.role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--app-muted)]">
+                Shift status
+                <select
+                  className="rounded-xl border border-[rgba(15,23,42,0.12)] bg-[var(--app-bg)] px-3 py-2 text-sm text-[var(--app-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-surface)]"
+                  value={filters.status || ''}
+                  onChange={(e) => onFilterChange({ ...filters, status: e.target.value })}
+                >
+                  {statusFilterOptions.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-          );
+            <div className="mt-4 text-xs text-[var(--app-muted)]">Filters adjust both the board and exported reports.</div>
+          </div>
+        );
 
-          if (isManager) {
-            return (
-              <div className="md:flex md:items-stretch md:gap-6">
-                <div className="md:flex-1">
-                  <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition h-full flex flex-col">
-                    <div className="flex-1">
-                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        {metricCard('Confirmed', coverage?.confirmed ?? 0, 'text-[var(--app-success)]')}
-                        {metricCard('Scheduled', coverage?.scheduled ?? 0, 'text-[var(--app-info)]')}
-                        {metricCard('Pending', coverage?.pending ?? 0, 'text-[var(--app-warning)]')}
-                        {metricCard('Open', coverage?.open ?? 0, 'text-[var(--app-violet)]')}
-                      </div>
+        if (isManager) {
+          return (
+            <div className="md:flex md:items-stretch md:gap-6">
+              <div className="md:flex-1">
+                <div className="flex h-full flex-col rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition">
+                  <div className="flex-1">
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      {metricCard('Confirmed', coverage?.confirmed ?? 0, 'text-[var(--app-success)]')}
+                      {metricCard('Scheduled', coverage?.scheduled ?? 0, 'text-[var(--app-info)]')}
+                      {metricCard('Pending', coverage?.pending ?? 0, 'text-[var(--app-warning)]')}
+                      {metricCard('Open', coverage?.open ?? 0, 'text-[var(--app-violet)]')}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-4">
+                    <div className="rounded-xl bg-[color-mix(in_srgb,var(--app-surface)_90%,_var(--app-bg)_10%)] p-3 text-xs text-[var(--app-muted)]">
+                      Active staff this week:{' '}
+                      <span className="font-semibold text-[var(--app-text)]">{coverage?.active_staff ?? 0}</span>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-between gap-4">
-                      <div className="rounded-xl bg-[color-mix(in_srgb,var(--app-surface)_90%,_var(--app-bg)_10%)] p-3 text-xs text-[var(--app-muted)]">
-                        Active staff this week:{' '}
-                        <span className="font-semibold text-[var(--app-text)]">{coverage?.active_staff ?? 0}</span>
-                      </div>
-
-                      <div className="ml-auto">
-                        <button
-                          type="button"
-                          onClick={onAddShift}
-                          className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
-                        >
-                          + Add shift
-                        </button>
-                      </div>
+                    <div className="ml-auto">
+                      <button
+                        type="button"
+                        onClick={onAddShift}
+                        className="rounded-full bg-[var(--app-primary)] px-4 py-2 text-sm font-semibold text-[var(--app-primary-contrast)] shadow-sm transition hover:opacity-90"
+                      >
+                        + Add shift
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                <div className="md:w-1/4 w-full mt-4 md:mt-0">{filterCard}</div>
               </div>
-            );
-          }
 
-          if (isStaff) {
-            return <AvailabilitySummary entries={availabilityEntries} weekStart={weekStart} onOpen={() => setShowAvailability(true)} />;
-          }
+              <div className="mt-4 w-full md:mt-0 md:w-1/4">{filterCard}</div>
+            </div>
+          );
+        }
 
-          return filterCard;
-        })()
-      }
+        if (isStaff) {
+          return (
+            <div className="flex flex-col gap-6">
+              <AvailabilitySummary entries={availabilityEntries} weekStart={weekStart} onOpen={() => setShowAvailability(true)} />
+              <div className="rounded-3xl border border-[rgba(15,23,42,0.08)] bg-[var(--app-surface)] p-6 shadow-sm transition">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-[var(--app-text)]">Open coverage this week</h4>
+                    <p className="text-xs text-[var(--app-muted)]">{coverage?.open ?? 0} shift{(coverage?.open ?? 0) === 1 ? '' : 's'} need coverage.</p>
+                  </div>
+                  <span className="rounded-full bg-[color-mix(in_srgb,var(--app-info)_18%,_var(--app-bg)_82%)] px-3 py-1 text-sm font-semibold text-[var(--app-info)]">
+                    {coverage?.open ?? 0}
+                  </span>
+                </div>
+                <p className="mt-4 text-sm text-[var(--app-muted)]">Double-click or tap any “Open Coverage” shift on the board to volunteer for it.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return filterCard;
+      })()}
 
       
 

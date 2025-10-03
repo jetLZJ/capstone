@@ -36,12 +36,17 @@ const TIMELINE_MARKERS = TIMELINE_HOURS.map((hour) => ({
 
 const MIN_TIMELINE_BLOCK_PERCENT = Math.max((15 / WORKING_DAY_TOTAL_MINUTES) * 100, 1.5);
 
-const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
+const ShiftCard = ({ assignment, isManager, onEdit, onFillOpenShift, canFillOpenShift, style, isTouchDevice }) => {
   const meta = statusMeta(assignment.status);
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `assignment-${assignment.id}`,
     disabled: !isManager,
   });
+
+  const isOpenShift = (assignment.status || '').toLowerCase() === 'open';
+  const allowFill = Boolean(canFillOpenShift && isOpenShift);
+  const allowEdit = Boolean(isManager && typeof onEdit === 'function');
+  const isInteractive = allowEdit || allowFill;
 
   const start = parseISOToDate(assignment.start);
   const durationLabel = computeDurationLabel(assignment.start, assignment.end);
@@ -54,22 +59,32 @@ const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
   const tooltip = tooltipParts.join('\n');
 
   const handleDoubleClick = () => {
-    if (isManager && typeof onEdit === 'function') {
+    if (allowEdit) {
       onEdit(assignment);
+    } else if (allowFill && typeof onFillOpenShift === 'function') {
+      onFillOpenShift(assignment);
     }
   };
 
   const handleKeyDown = (event) => {
-    if (!isManager || typeof onEdit !== 'function') return;
+    if (!isInteractive) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onEdit(assignment);
+      if (allowEdit) {
+        onEdit(assignment);
+      } else if (allowFill && typeof onFillOpenShift === 'function') {
+        onFillOpenShift(assignment);
+      }
     }
   };
 
   const handleClick = () => {
-    if (!isTouchDevice || !isManager || typeof onEdit !== 'function' || isDragging) return;
-    onEdit(assignment);
+    if (!isTouchDevice || !isInteractive || isDragging) return;
+    if (allowEdit) {
+      onEdit(assignment);
+    } else if (allowFill && typeof onFillOpenShift === 'function') {
+      onFillOpenShift(assignment);
+    }
   };
 
   return (
@@ -82,10 +97,10 @@ const ShiftCard = ({ assignment, isManager, onEdit, style, isTouchDevice }) => {
         isManager ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-info)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]' : 'cursor-default',
         isDragging ? 'ring-2 ring-[color-mix(in_srgb,var(--app-info)_45%,_transparent_55%)] ring-offset-2 ring-offset-[var(--app-bg)]' : ''
       )}
-      onDoubleClick={handleDoubleClick}
-      onKeyDown={handleKeyDown}
-      onClick={handleClick}
-      tabIndex={isManager ? 0 : undefined}
+  onDoubleClick={handleDoubleClick}
+  onKeyDown={handleKeyDown}
+  onClick={handleClick}
+  tabIndex={isInteractive ? 0 : undefined}
       title={tooltip}
       style={style}
     >
@@ -123,6 +138,8 @@ const DayColumn = ({
   isActive,
   onAdd,
   onEdit,
+  onFillOpenShift,
+  canFillOpenShift,
   isManager,
   isToday,
   holiday,
@@ -281,6 +298,8 @@ const DayColumn = ({
                     assignment={assignment}
                     isManager={isManager}
                     onEdit={onEdit}
+                    onFillOpenShift={onFillOpenShift}
+                    canFillOpenShift={canFillOpenShift}
                     style={{ height: '100%' }}
                     isTouchDevice={isTouchDevice}
                   />
@@ -307,6 +326,8 @@ export default function ScheduleCalendar({
   onEditShift,
   onMoveShift,
   onNavigateWeek,
+  onFillOpenShift,
+  canFillOpenShift = false,
 }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
@@ -448,6 +469,8 @@ export default function ScheduleCalendar({
                   assignments={day.assignments}
                   onAdd={(date) => onAddShift(date)}
                   onEdit={onEditShift}
+                  onFillOpenShift={onFillOpenShift}
+                  canFillOpenShift={canFillOpenShift}
                   isManager={isManager}
                   isActive={overId === `day-${day.date}`}
                   isToday={isSameDate(day.date, todayString)}

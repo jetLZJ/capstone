@@ -11,10 +11,10 @@ Full‑stack restaurant management platform that combines a Flask API, a Vite/Re
 
 | Component | Tech | Purpose |
 | --- | --- | --- |
-| Proxy (`proxy/`, `config/`) | nginx | Terminates HTTP, forwards traffic to Flask/React services, and shields internal network resources. |
-| API (`flask/`) | Python 3.11, Flask, SQLite, JWT | Provides authentication, menu management, scheduling, analytics, and order workflows. |
+| Proxy (`proxy/`, `config/`) | nginx | Terminates HTTP, forwards traffic to Flask/React services, performs active health checks, and shields internal network resources. |
+| API (`flask/`) | Python 3.11, Flask, JWT | Runs as an active/standby pair of containers that share a read/write connection pool to rqlite. Provides authentication, menu management, scheduling, analytics, and order workflows. |
 | Frontend (`react/`) | React 18, Vite, React Router, TailwindCSS | Dashboard UI, schedule planner, menu editor, analytics surface for managers/staff. |
-| Data | SQLite (`flask/data/app.db`) | Lightweight relational storage seeded with demo users, menu items, schedules, and analytics data. |
+| Data | rqlite 3-node cluster (`rqlite-1/2/3`) | Distributed SQLite replica set seeded with demo users, menu items, schedules, and analytics data. |
 
 ![Architecture diagram](docs/media/architecture-overview.png) <!-- Optional: replace/remove if diagram unavailable -->
 
@@ -25,6 +25,7 @@ Full‑stack restaurant management platform that combines a Flask API, a Vite/Re
 - Menu management (CRUD, image uploads, categories, availability toggles, search/filter).
 - Orders API + React panels for active cart and order history.
 - Analytics dashboard summarising revenue, staffing, and popular items.
+- Built-in fault tolerance: dual Flask API replicas behind nginx and a 3-node rqlite cluster with automatic leader election.
 
 ## Tech Stack
 
@@ -114,6 +115,60 @@ CI Recommendations:
 - Proxy expects Flask service hostname `flask` and frontend `react` inside the Compose/Orchestrator network.
 
 Refer to [`docs/backend-fault-tolerance-plan.md`](./docs/backend-fault-tolerance-plan.md) for HA considerations and failover architecture ideas.
+
+## Fault Tolerance Topology
+
+```text
+Browser / API client
+	│
+	▼
+   nginx proxy (8080)
+	│  └── passive health checks + failover routing
+	▼
+┌───────────────────────────┐
+│ Flask API replicas        │
+│   • flask-primary (active)│
+│   • flask-secondary (warm)│
+└────────────┬──────────────┘
+	     │
+	     ▼
+   rqlite replica set (3 nodes)
+   • rqlite-1 (leader capable)
+   • rqlite-2 (follower)
+   • rqlite-3 (follower)
+```
+
+- **Proxy resiliency** – nginx probes each Flask replica (`/health`) and automatically retries failed requests.
+- **Stateless API replicas** – both Flask containers mount the same image and connect to rqlite; JWTs allow any replica to serve a request.
+- **Durable data layer** – rqlite handles consensus and leader election, so writes continue as long as a majority of nodes remain.
+
+## Demonstrating Fault Tolerance
+
+1. **Start the full stack**
+
+    ```powershell
+    docker compose up -d --build
+    ```
+
+2. **Seed and verify data** – log into the app at <http://localhost:3000> and create an order or update a schedule to generate traffic.
+3. **Simulate an API failure**
+
+    ```powershell
+    docker compose stop flask-primary
+    ```
+
+    Reload the UI or hit `Invoke-WebRequest http://localhost:8080/api/menu` to confirm responses continue via `flask-secondary`.
+4. **Bring the replica back**
+
+    ```powershell
+    docker compose start flask-primary
+    ```
+
+    nginx will automatically resume routing once the health check passes.
+5. **Simulate a data-node outage** – stop one follower (e.g. `docker compose stop rqlite-3`) and repeat an order workflow. rqlite will keep accepting writes because a quorum (2 of 3) is available.
+6. **Recover the cluster** – restart the node (`docker compose start rqlite-3`). The restarted node will catch up automatically.
+
+Document screenshots or CLI output while performing the steps above to showcase the self-healing behaviour.
 
 ---
 

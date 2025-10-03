@@ -16,16 +16,26 @@ Full‑stack restaurant management platform that combines a Flask API, a Vite/Re
 | Frontend (`react/`) | React 18, Vite, React Router, TailwindCSS | Dashboard UI, schedule planner, menu editor, analytics surface for managers/staff. |
 | Data | rqlite 3-node cluster (`rqlite-1/2/3`) | Distributed SQLite replica set seeded with demo users, menu items, schedules, and analytics data. |
 
-![Architecture diagram](docs/media/architecture-overview.png) <!-- Optional: replace/remove if diagram unavailable -->
+
+```mermaid
+graph TD
+    A[Browser / Client] --> B[nginx proxy (port 8080)]
+    B --> C[React frontend<br/>Vite dev server / static bundle]
+    B --> D[Flask API replicas<br/>Primary + Secondary]
+    D --> E[(rqlite cluster<br/>3 nodes, replicated SQLite)]
+    D --> F[Static uploads / assets]
+    C -->|API calls| D
+```
 
 ### Key Features
 
 - Role‑aware authentication (Admin, Manager, Staff, User) with JWT tokens and revocation list.
-- Rich scheduling UI with drag & drop, overlap detection, and coverage summaries.
+- Rich scheduling UI with drag & drop, overlap detection, open-shift fill, and coverage summaries.
 - Menu management (CRUD, image uploads, categories, availability toggles, search/filter).
 - Orders API + React panels for active cart and order history.
 - Analytics dashboard summarising revenue, staffing, and popular items.
 - Built-in fault tolerance: dual Flask API replicas behind nginx and a 3-node rqlite cluster with automatic leader election.
+- Staff dashboard with shift notifications, weekly coverage metrics, and acknowledgement workflow.
 
 ## Tech Stack
 
@@ -116,26 +126,33 @@ CI Recommendations:
 
 Refer to [`docs/backend-fault-tolerance-plan.md`](./docs/backend-fault-tolerance-plan.md) for HA considerations and failover architecture ideas.
 
+## Recent Enhancements (October 2025)
+
+- **Scheduling pipeline:** `/api/schedules/week` now returns open-shift metadata, coverage counts, and conflict hints consumed by the drag-and-drop calendar.
+- **Staff notifications:** New `/api/schedules/notifications` endpoints seed and acknowledge shift alerts surfaced inside the Staff dashboard.
+- **Dashboard UX:** Staff landing page highlights next shifts, coverage totals, and real-time notifications with acknowledgement actions.
+- **Test coverage:** Extended `tests/test_schedule.py` exercises notifications, coverage math, and conflict resolution for the new APIs.
+
 ## Fault Tolerance Topology
 
 ```text
 Browser / API client
-	│
-	▼
-   nginx proxy (8080)
-	│  └── passive health checks + failover routing
-	▼
+          │
+          ▼
+    nginx proxy (8080)
+          │  └── passive health checks + failover routing
+          ▼
 ┌───────────────────────────┐
 │ Flask API replicas        │
 │   • flask-primary (active)│
 │   • flask-secondary (warm)│
 └────────────┬──────────────┘
-	     │
-	     ▼
-   rqlite replica set (3 nodes)
-   • rqlite-1 (leader capable)
-   • rqlite-2 (follower)
-   • rqlite-3 (follower)
+                 │
+                 ▼
+    rqlite replica set (3 nodes)
+    • rqlite-1 (leader capable)
+    • rqlite-2 (follower)
+    • rqlite-3 (follower)
 ```
 
 - **Proxy resiliency** – nginx probes each Flask replica (`/health`) and automatically retries failed requests.

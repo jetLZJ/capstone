@@ -19,12 +19,12 @@ Full‑stack restaurant management platform that combines a Flask API, a Vite/Re
 
 ```mermaid
 graph TD
-    A[Browser / Client] --> B[nginx proxy (port 8080)]
-    B --> C[React frontend<br/>Vite dev server / static bundle]
-    B --> D[Flask API replicas<br/>Primary + Secondary]
-    D --> E[(rqlite cluster<br/>3 nodes, replicated SQLite)]
-    D --> F[Static uploads / assets]
-    C -->|API calls| D
+    A[Browser / Client] --> B[nginx proxy (port 8080)];
+    B --> C[React frontend<br/>Vite dev server / static bundle];
+    B --> D[Flask API replicas<br/>Primary + Secondary];
+    D --> E[(rqlite cluster<br/>3 nodes, replicated SQLite)];
+    D --> F[Static uploads / assets];
+    C -->|API calls| D;
 ```
 
 ### Key Features

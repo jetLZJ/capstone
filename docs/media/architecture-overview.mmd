@@ -1,7 +1,7 @@
 graph TD
-    A[Browser / Client] --> B[nginx proxy (port 8080)]
-    B --> C[React frontend\nVite dev server / static bundle]
-    B --> D[Flask API replicas\nPrimary + Secondary]
-    C -->|API calls| D
-    D --> E[(rqlite cluster\n3 nodes, replicated SQLite)]
-    D --> F[Static uploads / assets]
+    A[Browser / Client] --> B[nginx proxy (port 8080)];
+    B --> C[React frontend\nVite dev server / static bundle];
+    B --> D[Flask API replicas\nPrimary + Secondary];
+    C -->|API calls| D;
+    D --> E[(rqlite cluster\n3 nodes, replicated SQLite)];
+    D --> F[Static uploads / assets];
